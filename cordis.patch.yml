@@ -1,0 +1,15 @@
+# dsh-waimai bundle patch.
+#
+# One Host row; the bundle's package name is what the profile resolves.
+#
+# The takeaway MCP server is NOT declared as a separate
+# `@deepseek-ai/dsh-mcp-client` row. That row would need the absolute path of
+# this package's `lib/mcp-server.js`, and a Loader `!!js` expression cannot
+# compute it: the loader evaluates expressions through `new Function`, whose
+# scope has neither `require` nor `import.meta`, and a relative `args` entry is
+# resolved against the DSH process working directory rather than this package.
+# The Host half therefore spawns and supervises the server itself, which also
+# lets configuration changes reach the child without a restart.
+- insert:
+    - id: waimai
+      name: 'dsh-waimai'

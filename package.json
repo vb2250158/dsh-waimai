@@ -1,0 +1,60 @@
+{
+  "name": "dsh-waimai",
+  "version": "0.1.0",
+  "description": "DSH 外卖助手：通用点单 MCP 工具 + 可配置的外卖自动化任务。用本机有头 Chromium 操作饿了么 H5，支付环节可选人工或自动。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "skills",
+    "cordis.patch.yml",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "icon.svg"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "test": "node --test \"tests/*.test.mjs\"",
+    "check": "node --check lib/index.js && node --check lib/mcp-server.js && node --check lib/mcp-bridge.js && node --check lib/automation.js && node --check lib/paths.js && node --check lib/client/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "playwright-core": "1.61.1",
+    "zod": "^4.0.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.5-alpha.1 <5.0.0",
+    "@deepseek-ai/schemastery": ">=3.18.5-alpha.1 <4.0.0"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "dsh",
+    "mcp",
+    "takeaway",
+    "playwright"
+  ],
+  "author": "vb2250158",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vb2250158/dsh-waimai.git"
+  },
+  "homepage": "https://github.com/vb2250158/dsh-waimai#readme",
+  "bugs": {
+    "url": "https://github.com/vb2250158/dsh-waimai/issues"
+  },
+  "icon": "./icon.svg"
+}
