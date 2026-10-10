@@ -68,12 +68,13 @@ test('a preview tick persists its claim before notification and does not run twi
   const previousHome = process.env.DSH_HOME
   process.env.DSH_HOME = dir
   const disposers = []
-  const { apply } = await import('../lib/index.js')
+  const { apply, Config } = await import('../lib/index.js')
   const now = new Date()
   const triggerTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
   let callback
   let previews = 0
   const ctx = {
+    on() {},
     logger: { warn() {}, info(message) { if (message.includes('未下单')) previews++ } },
     effect(create) { disposers.push(create()) },
     tools: { register() { return () => {} } },
@@ -81,9 +82,9 @@ test('a preview tick persists its claim before notification and does not run twi
     timer: { interval(fn) { callback = fn; return () => {} } },
   }
   try {
-    apply(ctx, { dryRun: true, headless: true, maxOrderAmount: 35, dailyBudget: 50,
+    apply(ctx, Config({ dryRun: true, headless: true, maxOrderAmount: 35, dailyBudget: 50,
       paymentMode: 'manual', merchantWhitelist: [],
-      autoTasks: [{ ...task, enabled: true, triggerTime, dateRule: 'everyday', notifyOnSuccess: true }] })
+      autoTasks: [{ ...task, enabled: true, triggerTime, dateRule: 'everyday', notifyOnSuccess: true }] }))
     await callback()
     const saved = await readState(join(dir, 'waimai', 'automation-state.json'))
     assert.equal(typeof saved.lastRun[task.id], 'string')

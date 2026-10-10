@@ -7,6 +7,7 @@ DeepSeek Harness 外卖助手插件：用本机有头 Chromium 操作饿了么 H
 - **通用点单**：Agent 通过 `mcp__waimai__*` 工具搜索店铺、浏览菜单、加购、提交订单。
 - **自动化任务**：配置任意多个任务，每个任务有独立的触发时间、日期规则、菜单池和金额上限，到点由插件直接完成下单。
 - **两级支付模式**：`manual` 只提交订单，`auto` 在上限与白名单内自动完成支付。
+- **优惠券勾选项**：自动领取免费券、自动使用可用券默认勾上，可分别关闭；用券后按页面实付金额检查预算。
 - **两个技能**：`waimai-order`（用户说「点外卖」触发）、`auto-order`（配置或排查自动化任务时触发）。
 
 ## 安装
@@ -56,8 +57,13 @@ dsh plugin --profile web add --save-exact github:vb2250158/dsh-waimai#<40位提�
 | `paymentMode` | `manual` | `auto` 自动支付 / `manual` 仅提交 |
 | `merchantWhitelist` | `[]` | 自动支付的白名单商家，留空则不限制 |
 | `operationLog` | `true` | 记录支付操作日志 |
+| `autoClaimCoupons` | `true` | 自动领取店内可见免费券，跳过会员、积分兑换和付费券包 |
+| `autoUseCoupons` | `true` | 结算时选取页面可选券中可读折扣最大的券 |
+| `couponClaimLimit` | `10` | 单次最多尝试领取数量，范围 1–50 |
 
 `dryRun` 默认为 `true`，提交与支付工具会直接拒绝执行。关闭预览且显式选择 `auto` 后才允许自动支付；白名单为空仍表示不限制商家，非空时要求商家名完全匹配。
+
+优惠券设置在「插件 → dsh-waimai → 插件配置」中显示为两个勾选项。预览模式不领取或使用券。`claim_coupons` 在店铺页领取可见免费券，`apply_coupons` 在结算页选择券；`submit_order` 也会按勾选项自动选券并重读金额。无可用券时正常继续，领取结果不明确时不重试。只支持可识别的券卡片和按钮，不购买券包、不假设优惠金额；真实账号的券页仍需登录后验收。
 
 ### 自动化任务（`autoTasks`）
 
@@ -144,7 +150,7 @@ MCP 子进程由 Host 半自己启动，而不是在 `cordis.patch.yml` 里声�
 - Loader 用 `new Function('ctx', 'expr', 'with (ctx) { return eval(expr) }')` 求值 `!!js`，作用域里既没有 `require` 也没有 `import.meta`，所以表达式算不出本包路径（见 `vendor/loader/src/config/utils.ts`）。
 - stdio transport 把相对 `args` 交给 `spawn`，解析基准是 DSH 进程的工作目录，不是插件目录。
 
-自己持有 spawn 之后，路径由 `import.meta.url` 得出，配置变化也能直接传给新的子进程，不必重启 DSH。
+自己持有 spawn 之后，路径由 `import.meta.url` 得出，配置变化会重启 MCP 子进程，不必重启 DSH。配置以根 `volatile()` 引用提供给官方表单；正在运行的定时任务保留开始时的设置，结束后再切换子进程配置。
 
 ### 为什么不用 `timer.cron()`
 

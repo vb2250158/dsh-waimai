@@ -26,6 +26,8 @@ const EXPECTED_TOOLS = [
   'search_food',
   'enter_shop',
   'get_menu',
+  'claim_coupons',
+  'apply_coupons',
   'add_to_cart',
   'view_cart',
   'submit_order',
@@ -107,5 +109,12 @@ test('preview mode blocks checkout and payment before launching a browser', asyn
     const value = JSON.parse(result.content[0].text)
     assert.equal(value.data.browserOpen, false)
     assert.equal(value.data.dryRun, true)
+    for (const name of ['claim_coupons', 'apply_coupons']) {
+      const coupon = JSON.parse((await client.callTool({ name, arguments: {} })).content[0].text)
+      assert.equal(coupon.success, true)
+      assert.equal(coupon.data.skipped, 'preview')
+    }
+    assert.equal(value.data.autoClaimCoupons, true)
+    assert.equal(value.data.autoUseCoupons, true)
   } finally { await close() }
 })

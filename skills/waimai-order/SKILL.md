@@ -12,7 +12,7 @@ whenToUse: 用户表达点餐、外卖、饮品或餐食购买意图时
 
 插件已挂载外卖 MCP 工具，命名空间为 `mcp__waimai__*`：
 
-`open_browser`、`search_food`、`enter_shop`、`get_menu`、`add_to_cart`、`view_cart`、`submit_order`、`request_payment`、`get_order_status`。
+`open_browser`、`search_food`、`enter_shop`、`get_menu`、`claim_coupons`、`apply_coupons`、`add_to_cart`、`view_cart`、`submit_order`、`request_payment`、`get_order_status`。
 
 浏览器是有头窗口，登录和验证码由用户在窗口里完成。所有工具返回 `{ success, data }` 结构的 JSON。
 
@@ -24,6 +24,7 @@ whenToUse: 用户表达点餐、外卖、饮品或餐食购买意图时
 4. **推荐**：把 `data.shops` 里的店铺名、评分、配送时间、起送价列给用户，等用户选择。不要替用户决定。
 5. **进店与菜单**：调用 `mcp__waimai__enter_shop`（`shopName` 用搜索结果里的原文），再调用 `mcp__waimai__get_menu`，把菜品名和价格列给用户。
 6. **加购**：用户选定后调用 `mcp__waimai__add_to_cart`（`itemName` 用菜单原文，`quantity` 可选）。未达起送价时如实告知，并询问是否凑单。
+   进店后可调用 `mcp__waimai__claim_coupons`，只领取配置允许的免费券；结算自动按 `autoUseCoupons` 选择可用券并重读实付金额。两个勾选项默认开启，预览模式不操作优惠券。
 7. **回显购物车**：调用 `mcp__waimai__view_cart`，把商品、数量、总价、配送费完整列给用户。
 8. **提交前确认**：把「店铺 + 菜品 + 数量 + 总价」整理成一行摘要，**等用户明确同意**再调用 `mcp__waimai__submit_order`。
 9. **支付**：按返回结果和插件配置处理：
