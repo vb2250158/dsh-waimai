@@ -1,6 +1,6 @@
 {
   "name": "dsh-waimai",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "DSH 外卖助手：通用点单 MCP 工具 + 可配置的外卖自动化任务。用本机有头 Chromium 操作饿了么 H5，支付环节可选人工或自动。",
   "type": "module",
   "main": "lib/index.js",
