@@ -21,6 +21,7 @@ const SERVER_ENTRY = join(dirname(fileURLToPath(import.meta.url)), '..', 'lib', 
 
 /** Tools the server must advertise, in the order the model sees them. */
 const EXPECTED_TOOLS = [
+  'get_status',
   'open_browser',
   'search_food',
   'enter_shop',
@@ -91,4 +92,20 @@ test('search_food requires a keyword and submit_order takes only an optional cap
   } finally {
     await close()
   }
+})
+
+test('preview mode blocks checkout and payment before launching a browser', async () => {
+  const { client, close } = await connect({ DRY_RUN: 'true', PAYMENT_MODE: 'auto' })
+  try {
+    for (const name of ['submit_order', 'request_payment']) {
+      const result = await client.callTool({ name, arguments: {} })
+      const value = JSON.parse(result.content[0].text)
+      assert.equal(value.success, false)
+      assert.match(value.error, /预览模式/)
+    }
+    const result = await client.callTool({ name: 'get_status', arguments: {} })
+    const value = JSON.parse(result.content[0].text)
+    assert.equal(value.data.browserOpen, false)
+    assert.equal(value.data.dryRun, true)
+  } finally { await close() }
 })

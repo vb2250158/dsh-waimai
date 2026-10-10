@@ -29,6 +29,14 @@ dsh plugin --profile web add --save-exact github:vb2250158/dsh-waimai#<40位提�
 
 ## 配置
 
+### 首次使用与 0.1.1 升级
+
+0.1.1 默认开启 `dryRun` 预览模式、默认手动支付，新任务默认禁用。先运行 `mcp__waimai__get_status` 检查浏览器，再配置任务并调用 `mcp__waimai__preview_task`（参数 `taskId`）查看时间、菜单和上限。预览工具不打开浏览器、不写执行状态、不下单；启用的定时任务在预览模式下只记录预览通知。
+
+确认菜单、地址、预算及支付方式后才关闭 `dryRun`。关闭预览后，`manual` 停在确认页；`auto` 可发起真实扣款。浏览器默认使用本机 Chrome；`browserChannel` 可选 `chrome`、`msedge`、`chromium`，最后一项需要已安装对应版本的 Playwright Chromium。
+
+升级已有配置时会保留显式的 `paymentMode` 和任务 `enabled` 值，但新增的 `dryRun` 默认仍开启。有效任务必须有唯一 ID、有效时间和菜单；错误配置会阻止调度并报告具体原因。
+
 配置项在 DSH 的「设置 → 插件」里编辑，插件的设置卡片会显示当前生效的安全态势。
 
 ### 基础
@@ -45,11 +53,11 @@ dsh plugin --profile web add --save-exact github:vb2250158/dsh-waimai#<40位提�
 | --- | --- | --- |
 | `maxOrderAmount` | `35` | 单笔订单上限（元）。服务端在支付前用页面实际金额复核 |
 | `dailyBudget` | `0` | 每日累计上限（元），`0` 表示不限制 |
-| `paymentMode` | `auto` | `auto` 自动支付 / `manual` 仅提交 |
+| `paymentMode` | `manual` | `auto` 自动支付 / `manual` 仅提交 |
 | `merchantWhitelist` | `[]` | 自动支付的白名单商家，留空则不限制 |
 | `operationLog` | `true` | 记录支付操作日志 |
 
-> **注意默认值**：`paymentMode` 默认为 `auto`，且白名单默认为空。也就是说，装好插件后，**上限以内的任意商家订单会被自动支付**，不需要额外确认。若希望每一笔都由你确认，请把 `paymentMode` 改为 `manual`。
+`dryRun` 默认为 `true`，提交与支付工具会直接拒绝执行。关闭预览且显式选择 `auto` 后才允许自动支付；白名单为空仍表示不限制商家，非空时要求商家名完全匹配。
 
 ### 自动化任务（`autoTasks`）
 
@@ -59,7 +67,7 @@ dsh plugin --profile web add --save-exact github:vb2250158/dsh-waimai#<40位提�
 | --- | --- | --- |
 | `id` | `''` | 任务 ID，**必须非空且唯一**，否则不会被调度 |
 | `name` | `''` | 任务名，出现在通知里 |
-| `enabled` | `true` | 是否启用 |
+| `enabled` | `false` | 是否启用 |
 | `triggerTime` | `11:00` | 触发时间，`HH:mm` 本地时间 |
 | `dateRule` | `workday` | `workday` / `weekend` / `everyday` / `custom` |
 | `customDays` | 周一至周五 | `mon`…`sun`，仅 `custom` 时生效 |
@@ -68,7 +76,7 @@ dsh plugin --profile web add --save-exact github:vb2250158/dsh-waimai#<40位提�
 | `menuStrategy` | `rotate` | `rotate` 轮换 / `random` 随机 / `history` 最少最近点过 |
 | `maxOrderAmount` | `35` | 该任务单笔上限，**只能收紧**全局上限 |
 | `dailyBudget` | `50` | 该任务每日累计上限 |
-| `paymentMode` | `auto` | 该任务的支付模式 |
+| `paymentMode` | `manual` | 该任务的支付模式 |
 | `merchantWhitelist` | `[]` | 该任务的白名单，非空时取代全局白名单 |
 | `notifyOnSuccess` / `notifyOnFailure` | `true` | 是否记录通知 |
 
@@ -100,6 +108,8 @@ dsh plugin --profile web add --save-exact github:vb2250158/dsh-waimai#<40位提�
 3. 金额 ≤ 每日上限（配置为 0 时跳过）；
 4. 商家在非空白名单内（白名单为空时跳过）。
 
+每日金额按持久化支付记录累计，区分全局与各任务预算。点击前先保存金额占用；结果未确认也保留占用，重启不会清零。同一稳定订单编号不会重复支付；页面无法提供订单编号时拒绝自动支付。需要释放未确认占用时，先在平台核实是否扣款，再由维护者处理记录。
+
 任一条不通过都会拒绝并记录审计日志，**不重试**。
 
 ### 这些护栏挡不住的
@@ -122,6 +132,7 @@ dsh plugin --profile web add --save-exact github:vb2250158/dsh-waimai#<40位提�
 | `order-log.jsonl` | 支付审计流水 |
 | `notifications.jsonl` | 自动化任务的通知记录 |
 | `automation-state.json` | 轮换索引、历史与每日消费 |
+| `payment-state.json` | 支付金额占用、订单编号与任务预算记录 |
 | `mcp-server.log` | MCP 服务进程日志 |
 
 ## 实现说明
