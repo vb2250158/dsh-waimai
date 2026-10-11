@@ -1,4 +1,6 @@
 import { test } from 'node:test'
+import { createServer } from 'node:http'
+import { once } from 'node:events'
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -113,16 +115,33 @@ test('nonpersistent login shares runtime cookies but never writes durable login 
   } finally { await f.close() }
 })
 
-test('login RPC validates private payloads before the bridge call and owns an authenticated channel', async () => {
-  let handler, called = 0
+test('login HTTP channel authorizes, validates RPC envelopes and excludes secrets from replies', async () => {
+  let route, called = 0
   const ctx = { inject(names, callback) {
     assert.deepEqual(names, ['connection', 'webServer'])
-    callback({ effect:create => create(), connection: { rpc: { handle(channel, fn) { assert.equal(channel, '/waimai-login'); handler = fn; return () => {} } } } })
+    callback({ effect:create => create(), connection: { requestRejection: req => req.headers.authorization === 'synthetic-host-session' ? undefined : 401 }, webServer: { register(value) { route = value; return () => {} } } })
   } }
   registerLoginRpc(ctx, { async call(name) { called++; assert(LOGIN_TOOLS.includes(name)); return { success: true, data: { state: 'logged-out' } } } })
-  assert.equal((await handler('sendCode', { phone: 'invalid' })).ok, false)
-  assert.equal((await handler('status', { url: 'https://evil.example' })).ok, false)
-  assert.equal((await handler('__proto__', {})).ok, false)
-  assert.equal(called, 0)
-  assert.equal((await handler('status', {})).ok, true)
+  assert.equal(route.path, '/waimai-login')
+  const server = createServer((req, res) => { void route.handler(req, res) })
+  server.listen(0, '127.0.0.1'); await once(server, 'listening')
+  const url = 'http://127.0.0.1:' + server.address().port + route.path
+  const call = (endpoint, payload, extra = {}) => fetch(url + '/' + endpoint, { method: 'POST', headers: { authorization: 'synthetic-host-session', 'content-type': 'application/json', ...extra.headers }, body: JSON.stringify({ type:'client-request', rpcId:'synthetic-id', method:endpoint, payload, ...extra.body }) })
+  try {
+    assert.equal((await call('status', {}, { headers: { authorization: '' } })).status, 401)
+    assert.equal((await call('status', {}, { headers: { 'content-type': 'text/plain' } })).status, 415)
+    assert.equal((await call('__proto__', {})).status, 404)
+    for (const [endpoint, payload, extra] of [ ['sendCode', { phone:'invalid' }, {}], ['status', { url:'https://evil.example' }, {}], ['status', {}, { body: { method:'complete' } }], ['status', {}, { body: { type:'anything' } }] ]) {
+      assert.equal((await (await call(endpoint, payload, extra)).json()).result.ok, false)
+    }
+    assert.equal(called, 0)
+    assert.equal((await (await call('status', { oversized: 'x'.repeat(5000) })).json()).result.ok, false)
+    assert.equal(called, 0)
+    const response = await call('status', {})
+    assert.equal(response.headers.get('cache-control'), 'no-store')
+    const result = await response.json()
+    assert.equal(result.rpcId, 'synthetic-id')
+    assert.equal(result.result.ok, true)
+    assert.equal(called, 1)
+  } finally { server.closeAllConnections(); await new Promise(resolve=>server.close(resolve)) }
 })

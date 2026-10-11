@@ -56,8 +56,8 @@ Cookie 只保存在本机 `$DSH_HOME/waimai/login-state.json`；该文件包含�
 | 字段 | 默认 | 说明 |
 | --- | --- | --- |
 | `deliveryAddress` | `''` | 默认配送地址（仅记录，地址仍需在页面里选择） |
-| `headless` | `false` | 无头模式。**登录和支付需要可见窗口**，除非已登录且免密支付可用 |
-| `persistLogin` | `true` | 登录状态持久化在 `$DSH_HOME/waimai/browser-profile` |
+| `headless` | `false` | 点餐浏览器无头模式；人工支付需要可见窗口 |
+| `persistLogin` | `true` | 将接口 Cookie 和点餐浏览器登录态保存在本机；关闭时只保留当前进程登录态 |
 | `loginTimeoutMs` | `20000` | 单个登录接口请求超时（毫秒，1000–120000） |
 | `smsResendSeconds` | `60` | 验证码重发间隔（秒，60–600）；结果未确认也占用间隔 |
 
