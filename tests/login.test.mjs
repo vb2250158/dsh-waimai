@@ -16,11 +16,16 @@ const response = body => ({ ok: () => true, status: () => 200, headers: () => ({
 async function fixture(options = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'waimai-login-test-'))
   const calls = []
-  let loggedIn = false, generation = 0
+  let loggedIn = options.authenticated === true, generation = 0
   const cookies = [{ name: 'synthetic-session', value: 'synthetic-cookie-secret', domain: 'ipassport.ele.me', path: '/', expires: -1, httpOnly: true, secure: true, sameSite: 'Lax' }]
   const http = {
     get: async url => {
       calls.push({ method: 'GET', url })
+      if (url.startsWith(protocol.profileUrl)) return { ...response({}), json: async () => options.profile || { user_id: '12345', username: '示例用户', mobile: phone, avatar: 'a'.repeat(32) + 'png', balance: 'private-balance' } }
+      if (url.includes('/h5/mtop.alsc.order.fulfillment.queryorderlist/')) {
+        const request = JSON.parse(new URL(url).searchParams.get('data'))
+        return { ...response({}), ok: () => !options.ordersHttpError, json: async () => options.orders || { ret: ['SUCCESS::synthetic'], data: { result: { orderList: [], moreInfo: { hasMore: true, moreInfoParams: { pageNum: request.pageNum + 1, fromTime: 1700000000000 + request.pageNum } } } } } }
+      }
       if (url.includes('/h5/mtop.alsc.user.session.ele.check/')) {
         if (!cookies.some(c=>c.name==='_m_h5_tk') || options.expiredToken) {
           if (!options.expiredToken) cookies.push({ ...cookies[0], name:'_m_h5_tk', domain:'.ele.me', value:'synthetic-mtop-token_9999999999999' })
@@ -50,7 +55,7 @@ async function fixture(options = {}) {
     storageState: async () => ({ cookies, origins: [] }), dispose: async () => {},
   }
   const statePath = join(dir, 'login-state.json')
-  const login = new WaimaiLogin({ statePath, persistLogin: options.persistLogin !== false, createContext: async () => http })
+  const login = new WaimaiLogin({ statePath, persistLogin: options.persistLogin !== false, historyPageSize: options.historyPageSize || 10, createContext: async () => http })
   return { login, calls, statePath, close: async () => { await login.close(); await rm(dir, { recursive: true, force: true }) } }
 }
 
@@ -163,6 +168,40 @@ test('nonpersistent login shares runtime cookies but never writes durable login 
   } finally { await f.close() }
 })
 
+test('profile and order reads verify the account, mask data and use the next cursor with the configured limit', async () => {
+  const f = await fixture({ authenticated: true, historyPageSize: 4 })
+  try {
+    const profile = await f.login.profile()
+    assert.equal(profile.nickname, '示例用户')
+    assert.equal(profile.maskedPhone, '138****0000')
+    assert(!JSON.stringify(profile).includes(phone))
+    assert(!JSON.stringify(profile).includes('private-balance'))
+    const first = await f.login.orders()
+    await f.login.orders(first.nextCursor)
+    const requests = f.calls.filter(call => call.url.includes('queryorderlist/')).map(call => JSON.parse(new URL(call.url).searchParams.get('data')))
+    assert.equal(requests[0].pageSize, 4)
+    assert.equal(requests[0].pageNum, 0)
+    assert.equal(requests[1].pageNum, 1)
+    assert.equal(requests[1].fromTime, 1700000000000)
+    assert.equal(f.calls.filter(call => call.url.includes('session.ele.check/')).length, 4)
+    await assert.rejects(readFile(f.statePath), { code: 'ENOENT' })
+  } finally { await f.close() }
+})
+
+test('account reads stop on expired sessions, account mismatch, rejected transport and invalid pagination', async () => {
+  for (const [options, method] of [[{}, 'profile'], [{ authenticated: true, profile: { user_id: '999', username: 'other account' } }, 'profile'],
+    [{ authenticated: true, ordersHttpError: true }, 'orders'], [{ authenticated: true, orders: { ret: ['SUCCESS::synthetic'], data: { result: { orderList: [], moreInfo: { hasMore: true } } } } }, 'orders']]) {
+    const f = await fixture(options)
+    try { await assert.rejects(f.login[method](), error => !error.message.includes('other account') && !error.message.includes('synthetic-mtop-token')) }
+    finally { await f.close() }
+  }
+  const f = await fixture({ authenticated: true })
+  try {
+    await assert.rejects(f.login.orders({ pageNum: 1, fromTime: 0, accountId: '999' }))
+    assert.equal(f.calls.length, 0)
+  } finally { await f.close() }
+})
+
 test('login HTTP channel authorizes, validates RPC envelopes and excludes secrets from replies', async () => {
   let route, called = 0
   const ctx = { inject(names, callback) {
@@ -179,7 +218,7 @@ test('login HTTP channel authorizes, validates RPC envelopes and excludes secret
     assert.equal((await call('status', {}, { headers: { authorization: '' } })).status, 401)
     assert.equal((await call('status', {}, { headers: { 'content-type': 'text/plain' } })).status, 415)
     assert.equal((await call('__proto__', {})).status, 404)
-    for (const [endpoint, payload, extra] of [ ['sendCode', { phone:'invalid' }, {}], ['status', { url:'https://evil.example' }, {}], ['status', {}, { body: { method:'complete' } }], ['status', {}, { body: { type:'anything' } }] ]) {
+    for (const [endpoint, payload, extra] of [ ['sendCode', { phone:'invalid' }, {}], ['status', { url:'https://evil.example' }, {}], ['status', {}, { body: { method:'complete' } }], ['status', {}, { body: { type:'anything' } }], ['profile', {accountId:'999'}, {}], ['orders', {cursor:{pageNum:1,fromTime:0,url:'https://evil.example'}}, {}] ]) {
       assert.equal((await (await call(endpoint, payload, extra)).json()).result.ok, false)
     }
     assert.equal(called, 0)
@@ -191,5 +230,7 @@ test('login HTTP channel authorizes, validates RPC envelopes and excludes secret
     assert.equal(result.rpcId, 'synthetic-id')
     assert.equal(result.result.ok, true)
     assert.equal(called, 1)
+    for (const endpoint of ['profile', 'orders']) assert.equal((await (await call(endpoint, {})).json()).result.ok, true)
+    assert.equal(called, 3)
   } finally { server.closeAllConnections(); await new Promise(resolve=>server.close(resolve)) }
 })

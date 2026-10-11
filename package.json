@@ -1,7 +1,7 @@
 {
   "name": "dsh-waimai",
-  "version": "0.1.7",
-  "description": "DSH 外卖助手：插件页短信登录、通用点单 MCP 工具和可配置的外卖自动化任务。点餐通过本机 Chromium 操作饿了么 H5，支付环节可选人工或自动。",
+  "version": "0.1.8",
+  "description": "DSH 外卖助手：插件页短信登录、账号头像与历史订单、通用点单 MCP 工具和可配置的外卖自动化任务。点餐通过本机 Chromium 操作饿了么 H5，支付环节可选人工或自动。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -28,7 +28,7 @@
   },
   "scripts": {
     "test": "node --test \"tests/*.test.mjs\"",
-    "check": "node --check lib/index.js && node --check lib/mcp-server.js && node --check lib/mcp-bridge.js && node --check lib/automation.js && node --check lib/coupons.js && node --check lib/payments.js && node --check lib/env.js && node --check lib/paths.js && node --check lib/login.js && node --check lib/login-rpc.js && node --check lib/client/index.js"
+    "check": "node --check lib/index.js && node --check lib/mcp-server.js && node --check lib/mcp-bridge.js && node --check lib/automation.js && node --check lib/coupons.js && node --check lib/payments.js && node --check lib/env.js && node --check lib/paths.js && node --check lib/login.js && node --check lib/login-rpc.js && node --check lib/account-data.js && node --check lib/client/index.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
@@ -56,5 +56,9 @@
   "bugs": {
     "url": "https://github.com/vb2250158/dsh-waimai/issues"
   },
-  "icon": "./icon.svg"
+  "icon": "./icon.svg",
+  "devDependencies": {
+    "react": "^18.3.1",
+    "react-test-renderer": "^18.3.1"
+  }
 }

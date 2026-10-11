@@ -21,6 +21,17 @@
     "appKey": "12574478",
     "jsv": "2.7.5"
   },
+  "profileUrl": "https://h5.ele.me/restapi/eus/v3/users/",
+  "orders": {
+    "url": "https://waimai-guide.ele.me/h5/mtop.alsc.order.fulfillment.queryorderlist/1.0/5.0/",
+    "api": "mtop.alsc.order.fulfillment.queryOrderList",
+    "version": "1.0",
+    "appKey": "12574478",
+    "jsv": "2.7.5",
+    "query": { "SV": "5.0", "ttid": "h5@Web_iphone_11.22.148" },
+    "headers": { "asac": "alscevn3ENzy5pDc77sV4k" },
+    "client": { "miniapp_plugin_version": "12.0.2", "buildNum": "2" }
+  },
   "allowedHosts": ["ipassport.ele.me", "h5.ele.me", "passport.ele.me", "waimai-guide.ele.me", "pass.eleme.hk", "tb.eleme.hk"],
   "phoneCode": "86",
   "countryCode": "CN"

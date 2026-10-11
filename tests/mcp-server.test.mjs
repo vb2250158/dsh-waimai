@@ -24,6 +24,8 @@ const EXPECTED_TOOLS = [
   'login_status',
   'login_send_code',
   'login_complete',
+  'account_profile',
+  'account_orders',
   'get_status',
   'open_browser',
   'search_food',

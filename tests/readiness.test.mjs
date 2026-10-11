@@ -114,7 +114,7 @@ test('the Host bridge executes advertised MCP tools and unregisters them on stop
     assert.equal(direct.success, true)
     assert.equal(direct.data.dryRun, true)
     const tool = registered.get('mcp__waimai__get_status')
-    for (const name of ['login_status', 'login_send_code', 'login_complete']) assert.equal(registered.has(`mcp__waimai__${name}`), false)
+    for (const name of ['login_status', 'login_send_code', 'login_complete', 'account_profile', 'account_orders']) assert.equal(registered.has(`mcp__waimai__${name}`), false)
     const result = await tool.execute({}, { signal: new AbortController().signal })
     assert.equal(JSON.parse(result.content[0].text).success, true)
   } finally { await bridge.stop() }

@@ -1,0 +1,27 @@
+{
+  "type": "div",
+  "props": { "className": "waimai-account" },
+  "children": [
+    {
+      "type": "img",
+      "props": {
+        "className": "waimai-avatar",
+        "src": "https://cube.elemecdn.com/a/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaapng.png",
+        "alt": "用户头像",
+        "width": 56,
+        "height": 56,
+        "referrerPolicy": "no-referrer"
+      },
+      "children": []
+    },
+    {
+      "type": "div",
+      "props": { "className": "waimai-account-info" },
+      "children": [
+        { "type": "strong", "props": { "className": "waimai-account-name", "aria-label": "昵称" }, "children": ["示例用户"] },
+        { "type": "span", "props": { "className": "waimai-hint" }, "children": ["账号 ID: 12345"] },
+        { "type": "span", "props": { "className": "waimai-hint" }, "children": ["手机号: 138****0000"] }
+      ]
+    }
+  ]
+}
