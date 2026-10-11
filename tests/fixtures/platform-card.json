@@ -1,0 +1,14 @@
+{
+  "platforms": [
+    { "id": "taobao", "label": "淘宝闪购" },
+    { "id": "meituan", "label": "美团外卖" },
+    { "id": "jd", "label": "京东外卖" }
+  ],
+  "tabs": [
+    { "label": "账号与地址", "selected": true },
+    { "label": "点餐", "selected": false },
+    { "label": "历史订单", "selected": false },
+    { "label": "自动化任务", "selected": false },
+    { "label": "点单设置", "selected": false }
+  ]
+}

@@ -26,18 +26,19 @@ const EXPECTED_TOOLS = [
   'login_complete',
   'account_profile',
   'account_orders',
+  'platform_list',
+  'account_addresses',
+  'account_select_address',
+  'account_recent_shops',
+  'account_probe_menu',
+  'list_platforms',
   'get_status',
-  'open_browser',
-  'search_food',
-  'enter_shop',
+  'prepare_ordering',
+  'search_shops',
   'get_menu',
-  'claim_coupons',
-  'apply_coupons',
-  'add_to_cart',
-  'view_cart',
+  'preview_checkout',
   'submit_order',
   'request_payment',
-  'get_order_status',
 ]
 
 /**
@@ -86,15 +87,15 @@ test('request_payment exposes no parameters', async () => {
   }
 })
 
-test('search_food requires a keyword and submit_order takes only an optional cap', async () => {
+test('HTTP tools require a stable merchant and expose platform selection', async () => {
   const { client, close } = await connect()
   try {
     const { tools } = await client.listTools()
-    const search = tools.find(tool => tool.name === 'search_food')
-    assert.deepEqual(search.inputSchema.required, ['keyword'])
+    const menu = tools.find(tool => tool.name === 'get_menu')
+    assert.deepEqual(menu.inputSchema.required, ['shopId'])
 
     const submit = tools.find(tool => tool.name === 'submit_order')
-    assert.deepEqual(Object.keys(submit.inputSchema.properties ?? {}), ['maxAmount'])
+    assert.deepEqual(Object.keys(submit.inputSchema.properties ?? {}), ['platformId', 'quoteId', 'maxAmount'])
     assert.equal(submit.inputSchema.required, undefined)
   } finally {
     await close()
@@ -112,14 +113,23 @@ test('preview mode blocks checkout and payment before launching a browser', asyn
     }
     const result = await client.callTool({ name: 'get_status', arguments: {} })
     const value = JSON.parse(result.content[0].text)
-    assert.equal(value.data.browserOpen, false)
+    assert.equal(value.data.transport, 'http')
     assert.equal(value.data.dryRun, true)
-    for (const name of ['claim_coupons', 'apply_coupons']) {
-      const coupon = JSON.parse((await client.callTool({ name, arguments: {} })).content[0].text)
-      assert.equal(coupon.success, true)
-      assert.equal(coupon.data.skipped, 'preview')
+    assert.equal(value.data.capabilities.createOrder, false)
+  } finally { await close() }
+})
+
+test('unverified purchasing and unavailable platforms stop even with preview disabled', async () => {
+  const { client, close } = await connect({ DRY_RUN: 'false' })
+  try {
+    for (const name of ['preview_checkout', 'submit_order', 'request_payment']) {
+      const value = JSON.parse((await client.callTool({ name, arguments: {} })).content[0].text)
+      assert.equal(value.success, false)
+      assert.equal(value.code, 'ordering-unverified')
     }
-    assert.equal(value.data.autoClaimCoupons, true)
-    assert.equal(value.data.autoUseCoupons, true)
+    for (const platformId of ['meituan', 'jd', 'unknown']) {
+      const value = JSON.parse((await client.callTool({ name: 'account_profile', arguments: { platformId } })).content[0].text)
+      assert.equal(value.code, platformId === 'unknown' ? 'unknown-platform' : 'not-integrated')
+    }
   } finally { await close() }
 })

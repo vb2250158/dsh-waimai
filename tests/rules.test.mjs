@@ -164,16 +164,19 @@ test('childEnv carries the narrowed limits to the server', () => {
   const env = childEnv(config, undefined)
   assert.equal(env.MAX_ORDER_AMOUNT, '35')
   assert.equal(env.PAYMENT_MODE, 'auto')
-  assert.equal(env.HEADLESS, 'false')
+  assert.equal(env.DEFAULT_PLATFORM, 'taobao')
+  assert.equal(env.HEADLESS, undefined)
   assert.deepEqual(JSON.parse(env.MERCHANT_WHITELIST), ['Global'])
 
   const taskEnv = childEnv(config, {
+    platformId: 'meituan',
     maxOrderAmount: 20,
     dailyBudget: 40,
     paymentMode: 'manual',
     merchantWhitelist: ['Task'],
   })
   assert.equal(taskEnv.MAX_ORDER_AMOUNT, '20')
+  assert.equal(taskEnv.DEFAULT_PLATFORM, 'meituan')
   assert.equal(taskEnv.DAILY_BUDGET, '40')
   assert.equal(taskEnv.PAYMENT_MODE, 'manual')
   assert.deepEqual(JSON.parse(taskEnv.MERCHANT_WHITELIST), ['Task'])

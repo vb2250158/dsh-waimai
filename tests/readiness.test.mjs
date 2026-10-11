@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { emptyState, previewTask, validateTasks, readState, writeState } from '../lib/automation.js'
 import { reservePayment, readPayments } from '../lib/payments.js'
 import { WaimaiMcpBridge } from '../lib/mcp-bridge.js'
+import { LOGIN_TOOLS } from '../lib/login.js'
 
 const task = { id: 'demo-lunch', name: '午餐示例', enabled: false, triggerTime: '11:00',
   dateRule: 'workday', customDays: [], skipDates: [], menuPool: ['示例店 | 示例饭 | 28'],
@@ -114,7 +115,7 @@ test('the Host bridge executes advertised MCP tools and unregisters them on stop
     assert.equal(direct.success, true)
     assert.equal(direct.data.dryRun, true)
     const tool = registered.get('mcp__waimai__get_status')
-    for (const name of ['login_status', 'login_send_code', 'login_complete', 'account_profile', 'account_orders']) assert.equal(registered.has(`mcp__waimai__${name}`), false)
+    for (const name of LOGIN_TOOLS) assert.equal(registered.has(`mcp__waimai__${name}`), false)
     const result = await tool.execute({}, { signal: new AbortController().signal })
     assert.equal(JSON.parse(result.content[0].text).success, true)
   } finally { await bridge.stop() }
