@@ -16,6 +16,8 @@ const accountTree = node => typeof node === 'string' ? node : { type: node.type,
   children: node.children.map(accountTree) }
 
 async function mount(rpc, options = {}) {
+  const entries = new Map()
+  const localStorage = options.storage || { getItem: key => entries.get(key) ?? null, setItem: (key, value) => entries.set(key, value) }
   const originalCall = rpc.call.bind(rpc)
   const platforms = JSON.parse(await readFile(new URL('../lib/platforms.json', import.meta.url), 'utf8'))
   rpc = { call(channel, endpoint, payload) {
@@ -28,7 +30,7 @@ async function mount(rpc, options = {}) {
   const primitives = Object.fromEntries(['Button', 'Input', 'Switch', 'Menu', 'Checkbox', 'Tag', 'StateDot', 'IconPlusOutlineRegular', 'IconChevronDownOutlineRegular', 'IconTrashOutlineRegular'].map(name =>
     [name, props => React.createElement(name === 'Button' ? 'button' : 'span', props, props.children)]))
   runInNewContext(await readFile(new URL('../lib/client/index.js', import.meta.url), 'utf8'), {
-    window: { __ModuleLoader__: { load(entry) { module = entry.factory(name => name === 'react' ? React : primitives) } } },
+    window: { localStorage, __ModuleLoader__: { load(entry) { module = entry.factory(name => name === 'react' ? React : primitives) } } },
     document: { createElement: () => ({ dataset: {}, remove() {} }), head: { appendChild() {} } },
     structuredClone, setInterval, clearInterval, setTimeout, clearTimeout, crypto: { randomUUID: () => 'synthetic-id' },
   })
@@ -126,6 +128,92 @@ test('adding a SMS account retains the saved account while entering the new phon
     await act(async () => click('取消添加'))
     assert(!root.findAll(node => node.props.type === 'tel').some(node => node.type === 'span'))
   } finally { mounted.close() }
+})
+
+test('browser platform and account choices survive remounts without changing other open views', async () => {
+  const first = '11111111-1111-4111-8111-111111111111', second = '22222222-2222-4222-8222-222222222222'
+  const entries = new Map(), storage = { getItem: key => entries.get(key) ?? null, setItem: (key, value) => entries.set(key, value) }, calls = []
+  const rpc = { async call(_channel, endpoint, payload) {
+    calls.push({ endpoint, payload })
+    const ref = payload.accountRef || first
+    if (endpoint === 'status' || endpoint === 'accountView') return ok({ authenticated: true, state: 'logged-in', viewAccountRef: ref,
+      accounts: [{ ref: first, nickname: '第一账号' }, { ref: second, nickname: '第二账号' }] })
+    if (endpoint === 'profile') return ok({ ...profile, nickname: ref === second ? '第二账号' : '第一账号' })
+    throw Error('Unexpected request')
+  } }
+  let a = await mount(rpc, { storage }), b = await mount(rpc, { storage })
+  try {
+    const pick = (mounted, id, value) => mounted.renderer.root.findAll(node => node.type === 'span' && node.props.selectedId === id && Array.isArray(node.props.items))[0].props.onSelect(value)
+    await act(async () => pick(a, first, second))
+    assert(text(b.renderer.toJSON()).includes('第一账号')); assert(!text(b.renderer.toJSON()).includes('第二账号登录'))
+    const persisted = JSON.parse(entries.get('dsh-waimai.view.v1'))
+    assert.deepEqual(persisted, JSON.parse(await readFile(new URL('./fixtures/view-preference.json', import.meta.url), 'utf8')))
+    assert(!entries.get('dsh-waimai.view.v1').includes(profile.id))
+    a.close(); calls.length = 0; a = await mount(rpc, { storage })
+    assert.equal(calls[0].payload.accountRef, second)
+    assert(text(a.renderer.toJSON()).includes('第二账号'))
+    await act(async () => pick(a, 'taobao', 'jd'))
+    a.close(); calls.length = 0; a = await mount(rpc, { storage })
+    assert(text(a.renderer.toJSON()).includes('该平台尚未接入'))
+    assert.equal(calls.length, 0)
+    await act(async () => pick(a, 'jd', 'taobao'))
+    assert.equal(calls[0].payload.accountRef, second)
+    assert(text(a.renderer.toJSON()).includes('第二账号'))
+  } finally { a.close(); b.close() }
+})
+
+test('removed account and platform preferences use verified defaults while failed switches retain the previous choice', async () => {
+  const first = '11111111-1111-4111-8111-111111111111', removed = '22222222-2222-4222-8222-222222222222'
+  let stored = JSON.stringify({ version: 1, platformId: 'removed', accounts: { taobao: removed } })
+  const calls = [], storage = { getItem: () => stored, setItem: (_key, value) => { stored = value } }
+  const mounted = await mount({ async call(_channel, endpoint, payload) {
+    calls.push({ endpoint, payload })
+    if (endpoint === 'accountView' || endpoint === 'status' && payload.accountRef) return { ok: false, error: { code: 'account-missing', message: '账号已移除' } }
+    if (endpoint === 'status') return ok({ authenticated: true, state: 'logged-in', viewAccountRef: first, accounts: [{ ref: first }] })
+    if (endpoint === 'profile') return ok(profile)
+    throw Error('Unexpected request')
+  } }, { storage })
+  try {
+    assert.equal(calls[0].payload.accountRef, removed)
+    assert.equal(calls[1].payload.accountRef, undefined)
+    assert(text(mounted.renderer.toJSON()).includes('账号 ID: 12345'))
+    assert.deepEqual(JSON.parse(stored), { version: 1, platformId: 'taobao', accounts: { taobao: first } })
+    const selector = mounted.renderer.root.findAll(node => node.type === 'span' && node.props.selectedId === first && Array.isArray(node.props.items))[0]
+    await act(async () => selector.props.onSelect(removed))
+    assert(text(mounted.renderer.toJSON()).includes('账号已移除'))
+    assert.equal(JSON.parse(stored).accounts.taobao, first)
+  } finally { mounted.close() }
+})
+
+test('unreadable browser storage does not prevent account selection and reports a persistence failure', async () => {
+  const first = '11111111-1111-4111-8111-111111111111', second = '22222222-2222-4222-8222-222222222222'
+  const mounted = await mount({ async call(_channel, endpoint, payload) {
+    if (endpoint === 'status' || endpoint === 'accountView') return ok({ authenticated: true, state: 'logged-in', viewAccountRef: payload.accountRef || first,
+      accounts: [{ ref: first }, { ref: second }] })
+    if (endpoint === 'profile') return ok(profile)
+    throw Error('Unexpected request')
+  } }, { storage: { getItem() { throw Error('Storage denied') }, setItem() { throw Error('Storage denied') } } })
+  try {
+    const selector = mounted.renderer.root.findAll(node => node.type === 'span' && node.props.selectedId === first && Array.isArray(node.props.items))[0]
+    await act(async () => selector.props.onSelect(second))
+    assert(text(mounted.renderer.toJSON()).includes('无法记住此次选择'))
+    assert(mounted.renderer.root.findAll(node => node.type === 'span' && node.props.selectedId === second).length)
+  } finally { mounted.close() }
+})
+
+test('corrupt preferences do not reach the Host, and a failed restore does not silently query another account', async () => {
+  const ref = '22222222-2222-4222-8222-222222222222'
+  for (const [stored, expectedRef] of [['invalid-json', undefined], [JSON.stringify({ version: 1, accounts: { taobao: 'not-a-reference' } }), undefined],
+    [JSON.stringify({ version: 2, accounts: { taobao: ref } }), undefined], [JSON.stringify({ version: 1, platformId: 'taobao', accounts: { taobao: ref } }), ref]]) {
+    const calls = [], mounted = await mount({ async call(_channel, endpoint, payload) {
+      calls.push({ endpoint, payload })
+      return { ok: false, error: { code: 'verification-required', message: '平台需要验证' } }
+    } }, { storage: { getItem: () => stored, setItem() { throw Error('A failed restore must not write preferences') } } })
+    try {
+      assert.equal(calls.length, 1); assert.equal(calls[0].payload.accountRef, expectedRef)
+      assert(text(mounted.renderer.toJSON()).includes('平台需要验证'))
+    } finally { mounted.close() }
+  }
 })
 
 test('the settings page renders avatar, account details and orders, replaces pages and clears data on logout', async () => {

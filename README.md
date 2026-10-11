@@ -43,7 +43,7 @@ dsh plugin --profile web add --save-exact github:vb2250158/dsh-waimai#<40位提�
 
 ## 工具
 
-模型工具：`list_platforms`、`list_connections`、`get_status`、`prepare_ordering`、`search_shops`、`get_menu`、`preview_checkout`、`submit_order`、`request_payment` 和 Host 的 `preview_task`。`list_connections` 只返回平台和本机保存的账号引用，不返回昵称、手机号或凭据；每次使用仍复核会话。多个账号时，账号工具必须提供对应 `accountRef`，不会按当前页面的选择改变其他调用。`search_shops` 的 `scope` 默认 `nearby`，查询已选地址的首批附近推荐；`recent` 查询最近一页订单店铺，`keyword` 仅筛选本批结果，不能声称搜索平台全量商家。`get_menu` 要求返回的稳定 `shopId` 和该账号已选地址，返回分类、标价和只读选项。模型结果不包含账号 ID、地址或私人分页位置。购买工具在能力未验证时返回结构化错误，不发起购买请求。原有调用迁移见 [0.2.5 迁移说明](MIGRATION-0.2.5.md)。
+模型工具：`list_platforms`、`list_connections`、`get_status`、`prepare_ordering`、`search_shops`、`get_menu`、`preview_checkout`、`submit_order`、`request_payment` 和 Host 的 `preview_task`。`list_connections` 只返回平台和本机保存的账号引用，不返回昵称、手机号或凭据；每次使用仍复核会话。浏览器记住上次的平台和各平台账号，刷新或重新进入插件时复核后恢复；仅保存引用，不保存昵称、手机号或登录凭据。浏览器间不同步，清除站点数据后回到默认选择。已移除的账号回到可用默认账号，平台验证或临时查询失败不会改查其他账号。多个账号时，账号工具必须提供对应 `accountRef`，不会按当前页面的选择改变其他调用。`search_shops` 的 `scope` 默认 `nearby`，查询已选地址的首批附近推荐；`recent` 查询最近一页订单店铺，`keyword` 仅筛选本批结果，不能声称搜索平台全量商家。`get_menu` 要求返回的稳定 `shopId` 和该账号已选地址，返回分类、标价和只读选项。模型结果不包含账号 ID、地址或私人分页位置。购买工具在能力未验证时返回结构化错误，不发起购买请求。原有调用迁移见 [0.2.5 迁移说明](MIGRATION-0.2.5.md)。
 
 短信、账号、地址和历史订单仅在鉴权的 `/waimai-login` RPC 可用，对应 MCP 内部端点不注册给模型。手机号、验证码、Cookie、地址及订单摘要不会写入插件配置或共享清单。异常消息不返回网络 URL 或令牌。
 
