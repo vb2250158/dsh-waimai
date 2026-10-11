@@ -116,7 +116,7 @@ test('nonpersistent login shares runtime cookies but never writes durable login 
 test('login RPC validates private payloads before the bridge call and owns an authenticated channel', async () => {
   let handler, called = 0
   const ctx = { inject(names, callback) {
-    assert.deepEqual(names, ['connection'])
+    assert.deepEqual(names, ['connection', 'webServer'])
     callback({ effect:create => create(), connection: { rpc: { handle(channel, fn) { assert.equal(channel, '/waimai-login'); handler = fn; return () => {} } } } })
   } }
   registerLoginRpc(ctx, { async call(name) { called++; assert(LOGIN_TOOLS.includes(name)); return { success: true, data: { state: 'logged-out' } } } })
