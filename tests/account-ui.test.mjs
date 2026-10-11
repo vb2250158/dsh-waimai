@@ -72,6 +72,59 @@ test('Taobao QR renders in the private plugin page, preserves the current accoun
   } finally { mounted.close() }
 })
 
+test('account dropdown changes only the current view and scopes orders to the chosen account', async () => {
+  const first = '11111111-1111-4111-8111-111111111111', second = '22222222-2222-4222-8222-222222222222'
+  const calls = [], accounts = [{ ref: first, externalId: profile.id, nickname: profile.nickname }, { ref: second, externalId: '67890', nickname: '第二账号' }]
+  const rpc = { async call(_channel, endpoint, payload) {
+    calls.push({ endpoint, payload })
+    const ref = payload.accountRef || first
+    if (endpoint === 'status' || endpoint === 'accountView') return ok({ authenticated: true, state: 'logged-in', loginMethod: 'sms', viewAccountRef: ref, accounts })
+    if (endpoint === 'profile') return ok(ref === first ? profile : { ...profile, id: '67890', nickname: '第二账号' })
+    return ok({ accountId: ref === first ? profile.id : '67890', orders: [{ ...order, merchantName: ref === first ? '第一账号的店' : '第二账号的店' }], nextCursor: null })
+  } }
+  const a = await mount(rpc), b = await mount(rpc)
+  try {
+    const selector = a.renderer.root.findAll(node => node.props.selectedId === first && Array.isArray(node.props.items)).find(node => node.type === 'span')
+    assert.deepEqual(JSON.parse(JSON.stringify(selector.props.items)), JSON.parse(await readFile(new URL('./fixtures/account-selector.json', import.meta.url), 'utf8')))
+    await act(async () => selector.props.onSelect(second))
+    assert(text(a.renderer.toJSON()).includes('第二账号'))
+    assert(text(b.renderer.toJSON()).includes('账号 ID: 12345'))
+    await act(async () => a.renderer.root.findAllByType('button').find(button => text(button.props.children) === '历史订单').props.onClick())
+    assert(text(a.renderer.toJSON()).includes('第二账号的店'))
+    assert(!text(a.renderer.toJSON()).includes('第一账号的店'))
+    assert.equal(calls.findLast(value => value.endpoint === 'orders').payload.accountRef, second)
+    assert(!calls.some(value => value.endpoint === 'accountSelect'))
+  } finally { a.close(); b.close() }
+})
+
+test('adding a SMS account retains the saved account while entering the new phone and code', async () => {
+  let adding = false, pending
+  const calls = [], first = '11111111-1111-4111-8111-111111111111'
+  const mounted = await mount({ async call(_channel, endpoint, payload) {
+    calls.push({ endpoint, payload })
+    if (endpoint === 'profile') return ok(profile)
+    if (endpoint === 'accountBegin') { adding = true; pending = { state: 'not-checked', codePending: false } }
+    if (endpoint === 'sendCode') pending = { state: 'code-sent', codePending: true, maskedPhone: '139****0000', retryAfterSeconds: 60 }
+    if (endpoint === 'accountCancel') { adding = false; pending = undefined }
+    return ok({ authenticated: true, state: 'logged-in', loginMethod: 'sms', viewAccountRef: first,
+      accounts: [{ ref: first, externalId: profile.id, nickname: profile.nickname }], addingAccount: adding, pendingLogin: pending })
+  } })
+  try {
+    const root = mounted.renderer.root, click = label => root.findAllByType('button').find(button => text(button.props.children) === label).props.onClick()
+    await act(async () => click('添加账号'))
+    let phone = root.findAll(node => node.props.type === 'tel').find(node => node.type === 'span')
+    act(() => phone.props.onChange({ target: { value: '13900000000' } }))
+    await act(async () => click('获取验证码'))
+    phone = root.findAll(node => node.props.type === 'tel').find(node => node.type === 'span')
+    assert.equal(phone.props.value, '13900000000')
+    assert(text(mounted.renderer.toJSON()).includes('账号 ID: 12345'))
+    assert(text(mounted.renderer.toJSON()).includes('139****0000'))
+    assert.equal(calls.find(value => value.endpoint === 'sendCode').payload.accountRef, first)
+    await act(async () => click('取消添加'))
+    assert(!root.findAll(node => node.props.type === 'tel').some(node => node.type === 'span'))
+  } finally { mounted.close() }
+})
+
 test('the settings page renders avatar, account details and orders, replaces pages and clears data on logout', async () => {
   let signedIn = true
   const calls = []
