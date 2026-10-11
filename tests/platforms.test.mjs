@@ -138,6 +138,34 @@ test('read-only Mtop POST signs the body without leaking it into the URL and doe
   } finally { await login.close() }
 })
 
+test('menu alias recovery checks a shop header once and rejects mismatched headers and changed delivery state', async () => {
+  const f = await fixture()
+  try {
+    const page = await f.service.addresses('taobao'), ref = page.addresses[0].ref
+    await f.service.selectAddress('taobao', page.accountId, ref)
+    const menu = JSON.parse(await readFile(new URL('./fixtures/menu.json', import.meta.url), 'utf8'))
+    menu.resultMap.menu.itemGroups[1].foldItems = []
+    const head = { resultMap: { storeHead: { storeInfo: { storeId: 'store-17' } }, storeMiniAppTab: [{ tbRestaurantId: '1717' }] } }
+    f.login.protocol.menuHead = { api: 'captured-header' }
+    let header = { ret: ['SUCCESS::synthetic'], data: head }, headerCalls = 0
+    f.login.mtop = async (spec, payload) => {
+      f.calls.push({ spec, payload })
+      if (spec.api === 'captured-header') { headerCalls++; return header }
+      return { ret: ['SUCCESS::synthetic'], data: menu }
+    }
+    assert.equal((await f.service.probeMenu('taobao', 'store-17', ref)).categories[0].items.length, 2)
+    assert.equal(headerCalls, 1)
+    head.resultMap.storeHead.storeInfo.storeId = 'foreign'
+    await assert.rejects(f.service.probeMenu('taobao', 'store-17', ref), error => error.code === 'menu-invalid')
+    header = { ret: ['FAIL_SYS_USER_VALIDATE::synthetic'], data: {} }
+    await assert.rejects(f.service.probeMenu('taobao', 'store-17', ref), error => error.code === 'verification-required')
+    head.resultMap.storeHead.storeInfo.storeId = 'store-17'; header = { ret: ['SUCCESS::synthetic'], data: head }
+    let reads = 0
+    f.login.requireAccount = async () => { if (++reads === 2) f.login.raw = [] }
+    await assert.rejects(f.service.probeMenu('taobao', 'store-17', ref), error => error.code === 'address-required')
+  } finally { await f.close() }
+})
+
 test('nearby reads require a fresh address, use its coordinates and reject cursors belonging to another account or address', async () => {
   const f = await fixture()
   try {

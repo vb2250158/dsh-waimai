@@ -1,0 +1,12 @@
+{
+  "shopId": "store-17",
+  "categories": [{
+    "id": "main", "name": "餐品",
+    "items": [
+      { "id": "food-1", "name": "示例饭", "description": "", "imageUrl": null, "price": "20", "originalPrice": null, "availability": "available", "tips": [], "options": [] },
+      { "id": "food-2", "name": "示例汤", "description": "", "imageUrl": null, "price": "5", "originalPrice": null, "availability": "sold-out", "tips": [], "options": [] }
+    ]
+  }],
+  "priceUnit": "CNY",
+  "orderingAvailable": false
+}

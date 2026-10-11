@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import { browseImage, menuData, shopPage } from '../lib/browse-data.js'
+import { browseImage, menuData, menuMerchantIdentity, MenuMerchantIdentityRequired, shopPage } from '../lib/browse-data.js'
 const menu = JSON.parse(await readFile(new URL('./fixtures/menu.json', import.meta.url), 'utf8'))
 const context = { accountId: '12345', addressRef: 'a'.repeat(64), offset: 0 }
 const shops = { data: { frontend_page_shop_list_recommend: { error: {}, customized: { hasNext: true, rankId: 'synthetic-rank' },
@@ -27,6 +27,40 @@ test('menus reject foreign merchants, unsupported headings, invalid prices and c
     value => { value.resultMap.menu.itemGroups[1].foldItems.push({ itemId: 'food-1', storeId: '1818', name: '示例饭' }) },
     value => { value.resultMap.menu.itemGroups[1].soldOutItems[0].storeId = 'foreign' },
   ]) { const value = structuredClone(menu); mutate(value); assert.throws(() => menuData(value, 'store-17')) }
+})
+
+test('sold-out numeric merchant identities are resolved by the matching shop header without requiring a folded duplicate', () => {
+  const value = structuredClone(menu), category = value.resultMap.menu.itemGroups[1]
+  category.foldItems = []
+  assert.throws(() => menuData(value, 'store-17'), MenuMerchantIdentityRequired)
+  const head = { resultMap: { storeHead: { storeInfo: { storeId: 'store-17' } },
+    storeHeadBusinessInfo: { storeId: 'store-17' }, storeMiniAppTab: [{ tbRestaurantId: '1717' }, { tbRestaurantId: 1717 }] } }
+  const identity = menuMerchantIdentity(head, 'store-17')
+  const result = menuData(value, 'store-17', identity)
+  assert.equal(result.categories[0].items[1].availability, 'sold-out')
+  for (const mutate of [h => { h.resultMap.storeHead.storeInfo.storeId = 'foreign' },
+    h => { h.resultMap.storeHeadBusinessInfo.storeId = 'foreign' },
+    h => { h.resultMap.storeMiniAppTab.push({ tbRestaurantId: '9999' }) },
+    h => { h.resultMap.storeMiniAppTab = [] }]) {
+    const invalid = structuredClone(head); mutate(invalid); assert.throws(() => menuMerchantIdentity(invalid, 'store-17'))
+  }
+  category.soldOutItems[0].storeId = '9999'
+  assert.throws(() => menuData(value, 'store-17', identity))
+  category.items[1].storeId = '1717'
+  assert.throws(() => menuData(value, 'store-17', identity))
+})
+
+test('header-verified menu identity snapshot retains display fields and excludes recent purchases from alias confirmation', async () => {
+  const fixture = JSON.parse(await readFile(new URL('./fixtures/menu-native-identities.json', import.meta.url), 'utf8'))
+  const expected = JSON.parse(await readFile(new URL('./fixtures/menu-native-identities.expected.json', import.meta.url), 'utf8'))
+  assert.deepEqual(menuData(fixture.menu, 'store-17', menuMerchantIdentity(fixture.header, 'store-17')), expected)
+  const value = structuredClone(menu), parent = value.resultMap.menu.itemGroups[1]
+  const original = parent.items[1]
+  parent.items = []; parent.soldOutItems = []
+  value.resultMap.menu.itemGroups[0].items = [original]
+  assert.throws(() => menuData(value, 'store-17'), MenuMerchantIdentityRequired)
+  parent.subItemCategoryList = [{ groupId: 'nested', name: '嵌套菜单', items: [original] }]
+  assert.equal(menuData(value, 'store-17').categories[0].items[0].id, original.itemId)
 })
 
 test('nearby pages preserve delivery display fields and bind their next position to account and address', () => {

@@ -1,0 +1,19 @@
+{
+  "header": {
+    "resultMap": {
+      "storeHead": { "storeInfo": { "storeId": "store-17" } },
+      "storeMiniAppTab": [{ "tbRestaurantId": "1717" }]
+    }
+  },
+  "menu": {
+    "resultMap": {
+      "menu": {
+        "itemGroups": [{
+          "groupId": "main", "name": "餐品", "groupType": 1,
+          "items": [{ "itemId": "food-1", "storeId": "store-17", "name": "示例饭", "price": "20", "inSaleTime": true }],
+          "soldOutItems": [{ "itemId": "food-2", "storeId": "1717", "name": "示例汤", "price": "5", "inSaleTime": true }]
+        }]
+      }
+    }
+  }
+}
