@@ -1,5 +1,68 @@
 [
-  { "id": "taobao", "names": { "zh": "淘宝闪购", "en": "Taobao Instant Commerce" }, "adapter": "taobao", "capabilities": { "login": true, "profile": true, "addresses": true, "orders": true, "menuProbe": true, "checkout": false, "createOrder": false, "payment": false, "coupons": false }, "reason": "ordering-unverified" },
-  { "id": "meituan", "names": { "zh": "美团外卖", "en": "Meituan Waimai" }, "adapter": null, "capabilities": { "login": false, "profile": false, "addresses": false, "orders": false, "menuProbe": false, "checkout": false, "createOrder": false, "payment": false, "coupons": false }, "reason": "not-integrated" },
-  { "id": "jd", "names": { "zh": "京东外卖", "en": "JD Food Delivery" }, "adapter": null, "capabilities": { "login": false, "profile": false, "addresses": false, "orders": false, "menuProbe": false, "checkout": false, "createOrder": false, "payment": false, "coupons": false }, "reason": "not-integrated" }
+  {
+    "id": "taobao",
+    "names": {
+      "zh": "淘宝闪购",
+      "en": "Taobao Instant Commerce"
+    },
+    "adapter": "taobao",
+    "capabilities": {
+      "login": true,
+      "profile": true,
+      "addresses": true,
+      "orders": true,
+      "menuProbe": true,
+      "checkout": false,
+      "createOrder": false,
+      "payment": false,
+      "coupons": false,
+      "nearbyShops": true,
+      "menu": true
+    },
+    "reason": "ordering-unverified"
+  },
+  {
+    "id": "meituan",
+    "names": {
+      "zh": "美团外卖",
+      "en": "Meituan Waimai"
+    },
+    "adapter": null,
+    "capabilities": {
+      "login": false,
+      "profile": false,
+      "addresses": false,
+      "orders": false,
+      "menuProbe": false,
+      "checkout": false,
+      "createOrder": false,
+      "payment": false,
+      "coupons": false,
+      "nearbyShops": false,
+      "menu": false
+    },
+    "reason": "not-integrated"
+  },
+  {
+    "id": "jd",
+    "names": {
+      "zh": "京东外卖",
+      "en": "JD Food Delivery"
+    },
+    "adapter": null,
+    "capabilities": {
+      "login": false,
+      "profile": false,
+      "addresses": false,
+      "orders": false,
+      "menuProbe": false,
+      "checkout": false,
+      "createOrder": false,
+      "payment": false,
+      "coupons": false,
+      "nearbyShops": false,
+      "menu": false
+    },
+    "reason": "not-integrated"
+  }
 ]

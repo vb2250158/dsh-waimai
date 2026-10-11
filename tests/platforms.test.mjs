@@ -85,6 +85,10 @@ test('invalid durable selections and removed addresses stop requests without ove
 test('recent merchants are deduplicated and limited to real latest-page orders', async () => {
   const f = await fixture()
   try {
+    await assert.rejects(f.service.recentShops('taobao'), error => error.code === 'address-required')
+    assert(!f.calls.some(value => value.spec))
+    const page = await f.service.addresses('taobao')
+    await f.service.selectAddress('taobao', page.accountId, page.addresses[0].ref)
     const result = await f.service.recentShops('taobao', '示例')
     assert.equal(result.scope, 'recent-orders-only')
     assert.deepEqual(result.shops, [{ id: 'store-17', name: '示例店' }])
@@ -94,7 +98,7 @@ test('recent merchants are deduplicated and limited to real latest-page orders',
   } finally { await f.close() }
 })
 
-test('menu probes use only the selected address and stop on verification or unverified item options', async () => {
+test('menus use the selected address, stop on verification and reject missing display data', async () => {
   const f = await fixture()
   try {
     await assert.rejects(f.service.probeMenu('taobao', 'store-17'), error => error.code === 'address-required')
@@ -107,7 +111,13 @@ test('menu probes use only the selected address and stop on verification or unve
     assert.equal(request.payload.addressId, String(raw.id))
     assert.deepEqual({ latitude: request.payload.latitude, longitude: request.payload.longitude }, addressCoordinates(raw.st_geohash))
     f.login.reply = { ret: ['SUCCESS::synthetic'], data: {} }
-    await assert.rejects(f.service.probeMenu('taobao', 'store-17'), error => error.code === 'menu-unverified')
+    await assert.rejects(f.service.probeMenu('taobao', 'store-17'), error => error.code === 'menu-invalid')
+    f.login.reply.data = JSON.parse(await readFile(new URL('./fixtures/menu.json', import.meta.url), 'utf8'))
+    const result = await f.service.probeMenu('taobao', 'store-17', page.addresses[0].ref)
+    assert.equal(result.categories[0].items.length, 2)
+    const requests = f.calls.filter(value => value.spec).length
+    await assert.rejects(f.service.probeMenu('taobao', 'store-17', 'b'.repeat(64)), error => error.code === 'address-changed')
+    assert.equal(f.calls.filter(value => value.spec).length, requests)
   } finally { await f.close() }
 })
 
@@ -126,4 +136,32 @@ test('read-only Mtop POST signs the body without leaking it into the URL and doe
     assert.equal(requests[0].options.form.data, JSON.stringify({ addressId: 'synthetic-address' }))
     assert(!requests[0].url.includes('synthetic-token'))
   } finally { await login.close() }
+})
+
+test('nearby reads require a fresh address, use its coordinates and reject cursors belonging to another account or address', async () => {
+  const f = await fixture()
+  try {
+    await assert.rejects(f.service.nearbyShops('taobao'), error => error.code === 'address-required')
+    assert(!f.calls.some(value => value.spec))
+    const page = await f.service.addresses('taobao'), addressRef = page.addresses[0].ref
+    await f.service.selectAddress('taobao', page.accountId, addressRef)
+    f.login.protocol.nearby = { api: 'nearby-first' }; f.login.protocol.nearbyNext = { api: 'nearby-next' }
+    f.login.reply = { ret: ['SUCCESS::synthetic'], data: { data: { frontend_page_shop_list_recommend: { error: {},
+      customized: { hasNext: true, rankId: 'synthetic-rank' }, fields: { items: [{ bizCode: 'shop', fields: { restaurant: { id: 'store-17', name: '示例店' } } }] } } } } }
+    const first = await f.service.nearbyShops('taobao', undefined, addressRef)
+    const request = f.calls.find(value => value.spec)
+    assert.equal(request.spec.api, 'nearby-first')
+    assert.deepEqual({ latitude: request.payload.latitude, longitude: request.payload.longitude }, addressCoordinates(raw.st_geohash))
+    assert.equal(JSON.parse(request.payload.pageParams).limit, 10)
+    await f.service.nearbyShops('taobao', first.nextCursor, addressRef)
+    assert.equal(f.calls.filter(value => value.spec).at(-1).spec.api, 'nearby-next')
+    const count = f.calls.filter(value => value.spec).length
+    for (const cursor of [{ ...first.nextCursor, accountId: '999' }, { ...first.nextCursor, addressRef: 'b'.repeat(64) }]) {
+      await assert.rejects(f.service.nearbyShops('taobao', cursor, addressRef), error => error.code === 'address-changed')
+    }
+    assert.equal(f.calls.filter(value => value.spec).length, count)
+    f.login.raw = []
+    await assert.rejects(f.service.recentShops('taobao'), error => error.code === 'address-required')
+    assert.equal(f.calls.filter(value => value.spec).length, count)
+  } finally { await f.close() }
 })

@@ -1,0 +1,10 @@
+{
+  "resultMap": {
+    "menu": {
+      "itemGroups": [
+        {"groupId":"bought","name":"买过","groupType":11,"items":[{"oneMoreOrderItemDTO":{"orderId":"private-order"}}]},
+        {"groupId":"hot","name":"热销","groupType":2,"items":[{"itemType":-1,"floorType":0,"name":"热销"},{"itemId":"food-1","storeId":"store-17","name":"示例饭","price":"20.50","originPrice":"25","inSaleTime":true,"imageHash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaapng","attributes":[{"name":"口味","minPurchased":1,"maxPurchased":1,"details":[{"name":"微辣","saleStatus":1},{"name":"原味","saleStatus":0}]}],"purchaseButton":{"soldOut":false,"stock":10},"useCouponPrice":{"price":"1"},"jumpLink":"eleme://private-action","userTrack":{"token":"private-tracking"}}],"foldItems":[{"itemId":"food-1","storeId":"1717","name":"示例饭","price":"20.50"}],"soldOutItems":[{"itemId":"food-2","storeId":"1717","name":"示例汤","price":"5","inSaleTime":true}]}
+      ]
+    }
+  }
+}

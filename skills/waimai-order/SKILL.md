@@ -1,6 +1,6 @@
 ---
 name: waimai-order
-description: 使用外卖插件查看平台能力和最近店铺，检查 HTTP 点餐状态。用户提出点外卖、查店铺或菜单时使用。
+description: 使用外卖插件查看平台能力、附近店铺与分类菜单，检查 HTTP 点餐状态。用户提出点外卖、查店铺或菜单时使用。
 whenToUse: 用户希望点外卖、查看店铺或检查点餐能力时
 ---
 
@@ -12,7 +12,7 @@ whenToUse: 用户希望点外卖、查看店铺或检查点餐能力时
 
 `list_connections` 返回各平台已保存的账号引用，不返回昵称、手机号或凭据，也不证明会话仍有效。同一平台存在多个账号时必须指定对应 `accountRef`；用户在页面下拉选择账号只改变自己的视图，不更改模型调用或其他窗口。无法确定引用时请用户在插件页面选择并确认对应账号，不能凭最近使用记录猜测。
 
-`prepare_ordering` 复核指定账号和已选地址，仅返回脱敏状态。`search_shops` 支持 `platformId`、`accountRef` 和 `keyword`，只筛选最近一页订单中的店铺，不能声称搜索了平台所有商家。`get_menu` 需要 `platformId`、`accountRef` 和返回的稳定 `shopId`。要求人工验证时停止，让用户在官方窗口完成，不代做验证或制造验证令牌。
+`prepare_ordering` 复核指定账号和已选地址，仅返回脱敏状态。`search_shops` 支持 `platformId`、`accountRef`、`scope` 和 `keyword`。先在插件页选择有效配送地址；`scope` 默认 `nearby`，查询当前地址的首批附近推荐，`recent` 查询最近一页订单店铺。关键词仅筛选本批店铺，不能声称搜索了平台所有商家。`get_menu` 需要 `platformId`、`accountRef` 和返回的稳定 `shopId`。返回菜品分类、标价、售罄状态和只读选项，标价不是实付金额。要求人工验证时停止，让用户在官方窗口完成，不代做验证或制造验证令牌。
 
 `preview_checkout`、`submit_order` 和 `request_payment` 当前禁止购买。HTTP 200、登录成功或菜单请求成功都不代表规格、实付金额或提交协议已验证。`request_payment` 没有参数，不能指定金额或商家。没有真实服务端订单与支付确认不得说已下单、已支付，不重试结果未确认的购买。
 

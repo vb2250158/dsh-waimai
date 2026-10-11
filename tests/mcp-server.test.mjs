@@ -33,6 +33,7 @@ const EXPECTED_TOOLS = [
   'account_addresses',
   'account_select_address',
   'account_recent_shops',
+  'account_nearby_shops',
   'account_probe_menu',
   'account_list',
   'account_begin',

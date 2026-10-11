@@ -7,7 +7,7 @@ DeepSeek Harness 多平台外卖插件。淘宝闪购通过 HTTP 完成淘宝扫
 顶部统一选择平台和账号，账号选项标明淘宝扫码或短信登录；五个页签共用当前账号视图。淘宝闪购沿用 ele.me 的业务接口域名，页面使用淘宝闪购品牌。
 
 - **账号与地址**：优先显示登录状态、头像、昵称、账号 ID、脱敏手机号和当前配送地址；其他地址折叠为可展开列表。已登录时隐藏登录表单，点击「添加账号」后默认淘宝扫码，也可选手机号短信；短信入口提示订单可能属于不同账号。复核业务账号、资料和订单后才加入列表。多个账号保持独立登录，下拉只改变当前页面视图，不影响其他窗口或任务；切到任务或设置后返回仍保留所选账号。地址选择与账号绑定。
-- **点餐**：查看最近一页历史订单中的店铺并检查菜单接口。搜索范围不是平台全量商家。接口要求人工验证时停止；商品规格与购买协议未验证时，创建订单和支付按钮禁用。
+- **点餐**：顶部选择或更改当前账号的配送地址，未选有效地址时不查询店铺。选择后自动加载附近推荐店铺，展示图片、评分、月售、距离、配送时间和起送价，支持翻页及本页名称筛选；也可查看最近一页订单里的店铺。点击「查看菜单」读取分类、菜品图片、标价、售罄状态和只读口味选项，支持菜品搜索。切换地址立即清空店铺和菜单并丢弃旧请求；同地址刷新失败保留已读结果并提供重试。下单和支付仍未开放。
 - **历史订单**：优先显示商家、状态、时间、餐品和金额；订单号按需展开。支持刷新、下一页和返回最新记录；每次成功翻页替换当前列表，普通刷新失败时保留最后已校验的页面并显示重试入口，账号不一致时清除资料。
 - **任务**：显示当前平台的任务，设置时间、日期、参考菜单与预算。新任务暂停，预览不购买；关闭预览的任务报告接口未验证并停止。
 - **设置**：优先显示默认平台、预览和金额上限；尚未开放的购买配置与本机登录、历史分页设置按需展开。页面通过 Host 表单的版本检查保存修改，保留未编辑字段。
@@ -16,15 +16,15 @@ DeepSeek Harness 多平台外卖插件。淘宝闪购通过 HTTP 完成淘宝扫
 
 ## 当前能力
 
-| 平台 | 登录/账号 | 地址/历史 | 最近店铺/菜单探测 | 结算/创建订单/支付 |
+| 平台 | 登录/账号 | 地址/历史 | 店铺/菜单 | 结算/创建订单/支付 |
 | --- | --- | --- | --- | --- |
-| 淘宝闪购 | HTTP 可用 | HTTP 可用 | 最近订单店铺；菜单可能需人工验证 | 尚未验证，禁用 |
+| 淘宝闪购 | HTTP 可用 | HTTP 可用 | 附近推荐分页、最近订单店铺、分类菜单 HTTP 可用 | 尚未验证，禁用 |
 | 美团外卖 | 尚未接入 | 尚未接入 | 尚未接入 | 禁用 |
 | 京东外卖 | 尚未接入 | 尚未接入 | 尚未接入 | 禁用 |
 
 接口字段来自 2026-10-11 的真实账号只读抓包与客户端代码。登录初始化读取 `/mini_login.htm` 中的 JSON，再调用 `/newlogin/sms/send.do` 与 `/newlogin/sms/login.do`，每次发送前获取新 CSRF。登录返回经过 HTTPS 域名限制的 Cookie 同步地址，再通过 `mtop.alsc.user.session.ele.check` 独立确认账号。账号资料、地址和订单每次读取均复核会话与账号。
 
-菜单使用捕获的 `mtop.alsc.waimai.store.miniapp.store.detail.body.query.v2` HTTP POST。平台验证不自动解决，商品规格、结算与提交参数未确认时不猜测请求。不会执行创建订单、取消订单、购买券包或扣款。
+附近推荐通过 `mtop.alsc.eleme.miniapp.homepagev1` 与 `mtop.alsc.eleme.miniapp.collection.homepagev1` HTTP POST 按已选地址查询。分页位置与账号、地址绑定，不接受任意查询参数。菜单使用 `mtop.alsc.waimai.store.miniapp.store.detail.body.query.v2` HTTP POST；折叠菜品的原始商家 ID 必须由菜单中相同菜品的已确认商家引用核对，其他商家内容拒绝展示。只返回图片、菜品与选项等展示字段，不返回购买链接、购物车动作、历史重购记录或跟踪数据。菜单标价不代表实付金额。人工验证时停止；不会执行创建订单、取消订单、购买券包或扣款。
 
 淘宝二维码通过官方 `/havanaone/loginLegacy/qrCode/generate.do` 获取，并轮询 `/havanaone/loginLegacy/qrCode/query.do`。二维码在后端生成 PNG，临时令牌与 Cookie 不返回页面。每次扫码使用独立会话，取消、过期或切换页签会停止检查。淘宝确认后，通过 `mtop.alibaba.ucc.taobao.apply.usertoken` 与 `mtop.alibaba.ucc.oauthLogin` 换取闪购业务会话。仅接受 Eleme 站点的已确认会话，校验 Cookie 域名及账号 ID，再用业务接口复核本地 ID、Havana ID、资料与订单，全部通过后才保存。授权失败或额外验证时保留原账号；注册、绑定、换绑接口不会自动调用。
 
@@ -43,7 +43,7 @@ dsh plugin --profile web add --save-exact github:vb2250158/dsh-waimai#<40位提�
 
 ## 工具
 
-模型工具：`list_platforms`、`list_connections`、`get_status`、`prepare_ordering`、`search_shops`、`get_menu`、`preview_checkout`、`submit_order`、`request_payment` 和 Host 的 `preview_task`。`list_connections` 只返回平台和本机保存的账号引用，不返回昵称、手机号或凭据；每次使用仍复核会话。多个账号时，账号工具必须提供对应 `accountRef`，不会按当前页面的选择改变其他调用。`search_shops` 只筛选最近一页订单店铺；`get_menu` 要求稳定店铺 ID 和所指定账号已选地址。购买工具在能力未验证时返回结构化错误，不发起购买请求。
+模型工具：`list_platforms`、`list_connections`、`get_status`、`prepare_ordering`、`search_shops`、`get_menu`、`preview_checkout`、`submit_order`、`request_payment` 和 Host 的 `preview_task`。`list_connections` 只返回平台和本机保存的账号引用，不返回昵称、手机号或凭据；每次使用仍复核会话。多个账号时，账号工具必须提供对应 `accountRef`，不会按当前页面的选择改变其他调用。`search_shops` 的 `scope` 默认 `nearby`，查询已选地址的首批附近推荐；`recent` 查询最近一页订单店铺，`keyword` 仅筛选本批结果，不能声称搜索平台全量商家。`get_menu` 要求返回的稳定 `shopId` 和该账号已选地址，返回分类、标价和只读选项。模型结果不包含账号 ID、地址或私人分页位置。购买工具在能力未验证时返回结构化错误，不发起购买请求。原有调用迁移见 [0.2.5 迁移说明](MIGRATION-0.2.5.md)。
 
 短信、账号、地址和历史订单仅在鉴权的 `/waimai-login` RPC 可用，对应 MCP 内部端点不注册给模型。手机号、验证码、Cookie、地址及订单摘要不会写入插件配置或共享清单。异常消息不返回网络 URL 或令牌。
 
@@ -59,6 +59,7 @@ dsh plugin --profile web add --save-exact github:vb2250158/dsh-waimai#<40位提�
 | `smsResendSeconds` | `60` | 验证码发送间隔秒，60–600；结果不明也占用间隔 |
 | `qrLifetimeSeconds` | `180` | 单次扫码等待上限秒，整数 60–600；平台可提前使二维码失效 |
 | `qrPollSeconds` | `2` | 扫码检查间隔秒，整数 2–15 |
+| `browsePageSize` | `10` | 附近店铺每页数量，1–20 |
 | `historyPageSize` | `10` | 每页订单条数，整数 1–20 |
 | `maxOrderAmount` | `35` | 单笔金额上限，元；任务只能收紧 |
 | `dailyBudget` | `0` | 全局每日上限，元；0 表示无限制 |
@@ -80,6 +81,6 @@ dsh plugin --profile web add --save-exact github:vb2250158/dsh-waimai#<40位提�
 
 ## 验证范围
 
-测试覆盖平台能力隔离、账号与地址一致性、地址保存和重载、异常停止、菜单签名与 POST、预算收紧、任务去重、RPC 鉴权、实际 React 页面和 MCP 进程。真实账号已验证头像、资料、地址及历史订单的 HTTP 读取；菜单风控与创建订单链路需要独立验收，测试通过不代表真实购买已可用。
+测试覆盖平台能力隔离、账号与地址一致性、地址更换后的迟到结果、附近分页、菜单展示字段与异常停止、菜单签名与 POST、预算收紧、任务去重、RPC 鉴权、React 页面及 MCP 进程。真实账号已验证头像、资料、地址、历史订单、附近店铺分页及分类菜单的 HTTP 读取；平台仍可能要求人工验证。结算、创建订单和支付尚未验证，测试通过不代表真实购买可用。
 
 MIT

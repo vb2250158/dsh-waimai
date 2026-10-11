@@ -1,7 +1,7 @@
 {
   "name": "dsh-waimai",
-  "version": "0.2.4",
-  "description": "DSH 外卖账号助手：淘宝扫码与短信 HTTP 登录、独立多账号会话、头像、地址和订单读取；平台与账号下拉，购买接口待验证。",
+  "version": "0.2.5",
+  "description": "DSH 外卖助手：淘宝扫码与短信 HTTP 登录、多账号独立会话、配送地址、附近店铺、分类菜单与历史订单；下单接口待验证。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -18,7 +18,8 @@
     "MIGRATION-0.2.0.md",
     "MIGRATION-0.2.2.md",
     "LICENSE",
-    "icon.svg"
+    "icon.svg",
+    "MIGRATION-0.2.5.md"
   ],
   "dsh": {
     "bundle": {
@@ -30,7 +31,7 @@
   },
   "scripts": {
     "test": "node --test \"tests/*.test.mjs\"",
-    "check": "node --check lib/index.js && node --check lib/mcp-server.js && node --check lib/mcp-bridge.js && node --check lib/automation.js && node --check lib/payments.js && node --check lib/env.js && node --check lib/paths.js && node --check lib/login.js && node --check lib/taobao-qr.js && node --check lib/taobao-ucc.js && node --check lib/login-rpc.js && node --check lib/account-data.js && node --check lib/account-pool.js && node --check lib/address-data.js && node --check lib/platform-service.js && node --check lib/client/index.js"
+    "check": "node --check lib/index.js && node --check lib/mcp-server.js && node --check lib/mcp-bridge.js && node --check lib/automation.js && node --check lib/payments.js && node --check lib/env.js && node --check lib/paths.js && node --check lib/login.js && node --check lib/taobao-qr.js && node --check lib/taobao-ucc.js && node --check lib/login-rpc.js && node --check lib/account-data.js && node --check lib/account-pool.js && node --check lib/address-data.js && node --check lib/browse-data.js && node --check lib/platform-service.js && node --check lib/client/index.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

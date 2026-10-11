@@ -216,22 +216,85 @@ test('address selection confirms the saved reference and hides addresses from an
   } finally { mounted.close() }
 })
 
-test('ordering shows only server merchants, surfaces verification and keeps purchase buttons disabled', async () => {
+test('ordering shows nearby server merchants after address selection and surfaces verification without purchase actions', async () => {
+  const addressRef = 'a'.repeat(64)
   const mounted = await mount({ async call(_channel, endpoint) {
     if (endpoint === 'status') return ok({ authenticated: true, state: 'logged-in' })
     if (endpoint === 'profile') return ok(profile)
-    if (endpoint === 'recentShops') return ok({ accountId: profile.id, shops: [{ id: 'synthetic-shop', name: '示例店' }] })
+    if (endpoint === 'nearbyShops') return ok({ accountId: profile.id, addressRef, shops: [{ id: 'synthetic-shop', name: '示例店' }], nextCursor: null })
     if (endpoint === 'probeMenu') return { ok: false, error: { code: 'verification-required', message: '平台要求人工验证' } }
     throw new Error('Unexpected request')
-  } })
+  } }, { addresses: async () => ok({ accountId: profile.id, selectedRef: addressRef,
+    addresses: [{ ref: addressRef, address: '示例地址', contact: '示例联系人', maskedPhone: '', usable: true }] }) })
   try {
     const root = mounted.renderer.root
     await act(async () => root.findAllByType('button').find(button => text(button.props.children) === '点餐').props.onClick())
-    const selector = root.findAll(node => node.type === 'span' && node.props.className === 'waimai-choice').find(node => node.props.items.some(item => item.id === 'synthetic-shop'))
-    await act(async () => selector.props.onSelect('synthetic-shop'))
-    await act(async () => root.findAllByType('button').find(button => text(button.props.children) === '检查菜单').props.onClick())
+    assert(text(mounted.renderer.toJSON()).includes('示例店'))
+    await act(async () => root.findAllByType('button').find(button => text(button.props.children) === '查看菜单').props.onClick())
     assert(text(mounted.renderer.toJSON()).includes('平台要求人工验证'))
-    for (const label of ['创建订单', '支付']) assert.equal(root.findAllByType('button').find(button => text(button.props.children) === label).props.disabled, true)
+    assert(!root.findAllByType('button').some(button => ['创建订单', '支付'].includes(text(button.props.children))))
+    assert(text(mounted.renderer.toJSON()).includes('下单与支付暂未开放'))
+  } finally { mounted.close() }
+})
+
+test('ordering requires an address, edits it in place and discards late menus when it changes', async () => {
+  const refs = ['a'.repeat(64), 'b'.repeat(64)], pending = deferred(), calls = []
+  let selectedRef = null
+  const mounted = await mount({ async call(_channel, endpoint, payload) {
+    calls.push({ endpoint, payload })
+    if (endpoint === 'status') return ok({ authenticated: true, state: 'logged-in' })
+    if (endpoint === 'profile') return ok(profile)
+    if (endpoint === 'selectAddress') { selectedRef = payload.addressRef; return ok({ accountId: profile.id, selectedRef }) }
+    if (endpoint === 'nearbyShops' || endpoint === 'recentShops') return ok({ accountId: profile.id, addressRef: selectedRef,
+      shops: [{ id: 'synthetic-shop', name: selectedRef === refs[0] ? '旧地址店铺' : '新地址店铺' }], nextCursor: null })
+    if (endpoint === 'probeMenu') return pending.promise
+    throw Error('Unexpected request')
+  } }, { addresses: async () => ok({ accountId: profile.id, selectedRef,
+    addresses: refs.map((ref, i) => ({ ref, address: `示例地址${i}`, contact: '联系人', maskedPhone: '', usable: true })) }) })
+  try {
+    const root = mounted.renderer.root, click = label => root.findAllByType('button').find(button => text(button.props.children) === label).props.onClick()
+    await act(async () => click('点餐'))
+    assert(text(mounted.renderer.toJSON()).includes('先选择配送地址'))
+    assert(!calls.some(value => ['nearbyShops', 'recentShops'].includes(value.endpoint)))
+    await act(async () => click('使用此地址'))
+    assert(text(mounted.renderer.toJSON()).includes('旧地址店铺'))
+    let read
+    act(() => { read = click('查看菜单') })
+    await act(async () => click('使用此地址'))
+    assert(!text(mounted.renderer.toJSON()).includes('旧地址店铺'))
+    assert(text(mounted.renderer.toJSON()).includes('新地址店铺'))
+    await act(async () => { pending.resolve(ok({ accountId: profile.id, addressRef: refs[0], shopId: 'synthetic-shop', categories: [{ id: 'old', name: '旧菜单', items: [] }] })); await read })
+    assert(!text(mounted.renderer.toJSON()).includes('旧菜单'))
+    assert.equal(calls.findLast(value => value.endpoint === 'nearbyShops').payload.addressRef, refs[1])
+  } finally { mounted.close() }
+})
+
+test('menu view renders real categories, listed prices and options, filters dishes and retains data after refresh failure', async () => {
+  const addressRef = 'a'.repeat(64)
+  const { menuData } = await import('../lib/browse-data.js')
+  const menu = menuData(JSON.parse(await readFile(new URL('./fixtures/menu.json', import.meta.url), 'utf8')), 'store-17')
+  let fail = false
+  const mounted = await mount({ async call(_channel, endpoint) {
+    if (endpoint === 'status') return ok({ authenticated: true, state: 'logged-in' })
+    if (endpoint === 'profile') return ok(profile)
+    if (endpoint === 'nearbyShops') return ok({ accountId: profile.id, addressRef, shops: [{ id: 'store-17', name: '示例店' }], nextCursor: null })
+    if (endpoint === 'probeMenu') return fail ? { ok: false, error: { code: 'menu-unavailable', message: '平台暂不可用' } } : ok({ ...menu, accountId: profile.id, addressRef })
+    throw Error('Unexpected request')
+  } }, { addresses: async () => ok({ accountId: profile.id, selectedRef: addressRef, addresses: [{ ref: addressRef, address: '示例地址', contact: '联系人', maskedPhone: '', usable: true }] }) })
+  try {
+    const root = mounted.renderer.root, click = label => root.findAllByType('button').find(button => text(button.props.children) === label).props.onClick()
+    await act(async () => click('点餐'))
+    await act(async () => click('查看菜单'))
+    const cards = () => root.findAllByType('article').filter(node => node.props.className === 'waimai-food-card')
+    const summary = cards().map(node => ({ name: text(node.findAllByType('strong')[0]), price: text(node.find(node => node.props.className === 'waimai-price')), options: node.findAllByType('summary').map(text) }))
+    assert.deepEqual(summary, JSON.parse(await readFile(new URL('./fixtures/browse-view.json', import.meta.url), 'utf8')))
+    assert(text(mounted.renderer.toJSON()).includes('已售罄'))
+    const input = root.findAll(node => node.type === 'span' && node.props['aria-label'] === '搜索这家店的菜品')[0]
+    act(() => input.props.onChange({ target: { value: '汤' } }))
+    assert.equal(cards().length, 1)
+    fail = true
+    await act(async () => click('刷新菜单'))
+    assert.equal(cards().length, 1); assert(text(mounted.renderer.toJSON()).includes('平台暂不可用'))
   } finally { mounted.close() }
 })
 
