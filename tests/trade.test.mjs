@@ -1,0 +1,171 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { mkdtemp, rm, readFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { gzipSync, gunzipSync } from 'node:zlib'
+import { cartData, checkoutData, paymentDestination, submittedOrder, cents } from '../lib/trade-data.js'
+import { TaobaoTrade } from '../lib/taobao-trade.js'
+
+const zip = value => gzipSync(JSON.stringify(value)).toString('base64')
+const address = { ref: 'a'.repeat(64), nativeId: '77', geohash: 'wtw3sjq6', coordinates: { latitude: 31, longitude: 121 },
+  display: { address: '示例配送地址', contact: '示例用户', maskedPhone: '130****0000' } }
+const baseLine = { cart_id: 'cart-1', id: 'food-1', sku_id: 'sku-1', food_type: 1, tb_item_id: 'tb-item-1', tb_sku_id: 'tb-sku-1',
+  name: '示例饭', quantity: 1, price: 20, total_price: 20, is_valid: 1, is_selected: true, attrs: [], new_specs: [], garnish: [] }
+const cartRaw = () => ({ total_quantity: 2, invalid_foods: [], cart: { restaurant: { encrypted_id: 'store-17' }, total: 20, minimum_order_amount: 10 },
+  couple_group: [{ cart_item_d_t_o_list: [baseLine, { ...baseLine, cart_id: 'cart-2', id: 'food-2', sku_id: 'sku-2', tb_item_id: 'tb-item-2',
+    tb_sku_id: 'tb-sku-2', name: '无需餐具', price: 0, total_price: 0 }] }], tb_order: JSON.stringify({ buyParam: 'synthetic-selection', exParams: '{}' }) })
+function quoteRaw(cart = cartData(cartRaw(), 'store-17')) {
+  const component = fields => ({ fields, props: { isSubmit: 'true' } })
+  const quantity = cart.display.quantity, total = 2100
+  return { data: {
+    trade_checkout_global: component({ userId: '87654', uniqueId: 'synthetic-id', checkoutParamStr: JSON.stringify({
+      checkOutBizParam: { address_id: 'uic-77', selectedAdditionalServiceIds: [] }, checkOutItemParam: { encryptedShopId: 'store-17',
+        entities: cart.lines.map(item => ({ itemId: item.tb_item_id, skuId: item.tb_sku_id, buyAmount: item.quantity })) } }) }),
+    trade_checkout_order_submit: component({ addressId: 'uic-77', orderTotalFee: total, priceStr: '21', goodsTotalQuantity: quantity, isClosed: false, discountedPrice: 0 }),
+    trade_checkout_subtotal: component({ centPrice: total }),
+    trade_checkout_restaurant_info: component({ name: '示例店', totalQuantity: quantity, statusTip: { text: '明天 10:00 开始配送' },
+      foodList: cart.lines.map(item => ({ name: item.name, quantity: item.quantity, price: item.price, spec: '' })) }),
+    trade_checkout_payment_cashier: component({ paymentExternalInfo: { selectedPayOptionList: '["ALIPAY_BATCH_ESCROW_APP"]' } }),
+    trade_checkout_coupon: component({ feeList: [{ name: '配送费', price: 1 }] }),
+    tracking_only: { fields: { privateTracking: 'synthetic-tracking' }, props: { isSubmit: 'false' } },
+  }, ext: { linkage: { submit: zip({ buyerId: '87654', orderDTOs: [{ sellerId: 'synthetic-seller' }],
+    cashierPaymentDTO: { payOrderAmount: total, payCurrency: 'CNY', orderCurrency: 'CNY' } }),
+    adjust: zip({ tradeBuyQuery: { userId: '87654' }, extraParams: { checkoutAddressInfo: JSON.stringify({ selectedEleAddressId: '77' }) } }) } } }
+}
+
+test('server quote snapshot projects fees, timing and cents; submit uses only server-selected components', async () => {
+  const cart = cartData(cartRaw(), 'store-17'), raw = quoteRaw(cart)
+  const result = checkoutData(raw, { buyerId: '87654', addressId: '77', shopId: 'store-17', cart })
+  assert.deepEqual(result.display, JSON.parse(await readFile(new URL('./fixtures/trade-quote.expected.json', import.meta.url), 'utf8')))
+  const params = JSON.parse(gunzipSync(Buffer.from(result.request.params, 'base64')).toString())
+  assert(!params.tracking_only); assert.equal(result.request.linkage, raw.ext.linkage.submit)
+  assert.deepEqual(JSON.parse(result.request.feature), { paramsZip: 'true' })
+  for (const bad of [NaN, -1, '1.001', 0.001]) assert.throws(() => cents(bad))
+})
+
+test('foreign buyer/address/SKU, contradictory amount, extra service and closed store quotes cannot be submitted', () => {
+  const cart = cartData(cartRaw(), 'store-17'), owner = { buyerId: '87654', addressId: '77', shopId: 'store-17', cart }
+  for (const mutate of [
+    raw => { raw.data.trade_checkout_global.fields.userId = '999' },
+    raw => { raw.ext.linkage.adjust = zip({ tradeBuyQuery: { userId: '87654' }, extraParams: { checkoutAddressInfo: '{"selectedEleAddressId":"88"}' } }) },
+    raw => { const v = JSON.parse(raw.data.trade_checkout_global.fields.checkoutParamStr); v.checkOutItemParam.entities[0].skuId = 'other'; raw.data.trade_checkout_global.fields.checkoutParamStr = JSON.stringify(v) },
+    raw => { raw.data.trade_checkout_order_submit.fields.orderTotalFee++ },
+    raw => { const value = JSON.parse(gunzipSync(Buffer.from(raw.ext.linkage.submit, 'base64')).toString()); value.cashierPaymentDTO.payOrderAmount++; raw.ext.linkage.submit = zip(value) },
+    raw => { raw.data.trade_checkout_order_submit.fields.isClosed = true },
+    raw => { const v = JSON.parse(raw.data.trade_checkout_global.fields.checkoutParamStr); v.checkOutBizParam.selectedAdditionalServiceIds = ['paid-service']; raw.data.trade_checkout_global.fields.checkoutParamStr = JSON.stringify(v) },
+  ]) { const raw = quoteRaw(); mutate(raw); assert.throws(() => checkoutData(raw, owner)) }
+  const invalid = cartRaw(); invalid.cart.restaurant.encrypted_id = 'foreign'; assert.throws(() => cartData(invalid, 'store-17'))
+})
+
+test('payment handoffs accept official HTTPS destinations and never execute payment', () => {
+  for (const url of ['https://r.ele.me/payment?synthetic=1', 'https://h5.ele.me/cashier/postcashier?synthetic=1']) assert.equal(paymentDestination(url), url)
+  for (const url of ['http://r.ele.me/payment', 'https://r.ele.me.attacker.test/payment', 'https://attacker.test/', 'javascript:alert(1)', 'https://user:password@r.ele.me/payment', 'https://r.ele.me:444/payment']) assert.equal(paymentDestination(url), null)
+  assert.deepEqual(submittedOrder({ bizOrderId: '123,456', nextUrl: 'https://r.ele.me/payment?synthetic=1' }),
+    { orderIds: ['123', '456'], paymentUrl: 'https://r.ele.me/payment?synthetic=1' })
+})
+
+async function fixture(options = {}) {
+  const directory = await mkdtemp(join(tmpdir(), 'waimai-trade-')), calls = [], raw = cartRaw()
+  let now = 100000, rejectSubmit = false, accountId = '12345', selected = address
+  let chain = Promise.resolve()
+  const login = { protocol: Object.fromEntries(['menuHead', 'menu', 'cart', 'checkout', 'submit', 'taobaoIdentity'].map(api => [api, { api }])),
+    http: { async storageState() { return { cookies: [{ name: 'unb', domain: '.ele.me', value: '87654' }, { name: 'unb', domain: '.taobao.com', value: '98765' }] } } },
+    get accountId() { return accountId }, async requireAccount() {},
+    run(operation) { const promise = chain.then(operation); chain = promise.catch(() => {}); return promise },
+    async mtop(spec, payload, retry) {
+      calls.push({ api: spec.api, payload, retry })
+      if (spec.api === 'menuHead') return { ret: ['SUCCESS::ok'], data: { resultMap: { storeHead: { storeInfo: { storeId: 'store-17', sellerId: 'seller-17', tbStoreId: 'tb-17' } }, storeMiniAppTab: [{ tbRestaurantId: '1717' }] } } }
+      if (spec.api === 'menu') return { ret: ['SUCCESS::ok'], data: { resultMap: { menu: { itemGroups: [{ groupId: 'main', name: '主食', groupType: 2, items: [{
+        itemId: 'food-1', tbItemId: 'tb-item-1', storeId: 'store-17', name: '示例饭', price: '20', inSaleTime: true, attributes: [],
+        purchaseButton: { needMultiSpecs: 0, minPurchase: 1, stock: 10, commodityDict: { id: 'food-1', skuId: 'sku-1', foodType: 1, tbItemId: 'tb-item-1', tbSkuId: 'tb-sku-1', itemId: 'food-1' } } }] }] } } } }
+      if (spec.api === 'cart') {
+        const params = JSON.parse(JSON.parse(payload.bizInfos).cartOperateParam)
+        assert.deepEqual(params.extra_action, [])
+        for (const change of params.operating_entities) {
+          const line = raw.couple_group[0].cart_item_d_t_o_list.find(item => item.id === change.id)
+          line.quantity += change.step; line.total_price = line.quantity * line.price
+        }
+        raw.total_quantity = raw.couple_group[0].cart_item_d_t_o_list.reduce((sum, item) => sum + item.quantity, 0)
+        return { ret: ['SUCCESS::ok'], data: structuredClone(raw) }
+      }
+      if (spec.api === 'taobaoIdentity') return { ret: ['SUCCESS::ok'], data: { userNumId: '98765' } }
+      if (spec.api === 'checkout') return { ret: ['SUCCESS::ok'], data: quoteRaw(cartData(raw, 'store-17')) }
+      if (spec.api === 'submit') { if (rejectSubmit) throw Error('timeout'); return { ret: ['SUCCESS::ok'], data: { bizOrderId: '123456', nextUrl: 'https://r.ele.me/payment?synthetic=1' } } }
+      throw Error('unexpected endpoint')
+    } }
+  const service = { login, async selectedAddress(ref) { if (ref !== undefined && ref !== selected.ref) throw Error('stale address'); return selected },
+    checkReply(raw) { assert(raw.ret.some(value => value.startsWith('SUCCESS::'))) } }
+  const trade = new TaobaoTrade(service, { journalDirectory: directory, dryRun: false, now: () => now, ...options })
+  return { trade, calls, raw, directory, service, changeAccount: () => { accountId = '999' }, advance: () => { now += 121000 },
+    rejectSubmit: () => { rejectSubmit = true }, close: () => rm(directory, { recursive: true, force: true }) }
+}
+const getQuote = async f => {
+  const cart = await f.trade.cart('store-17', address.ref)
+  return f.trade.checkout({ shopId: 'store-17', addressRef: address.ref, revision: cart.revision })
+}
+const submitArgs = quote => ({ quoteRef: quote.quoteRef, confirmed: true, confirmedCents: quote.totalCents })
+
+test('one-item cart change retains unrelated lines and duplicate/stale operations stop before mutation', async () => {
+  const f = await fixture()
+  try {
+    const cart = await f.trade.cart('store-17', address.ref), other = structuredClone(f.raw.couple_group[0].cart_item_d_t_o_list[1])
+    const args = { shopId: 'store-17', addressRef: address.ref, revision: cart.revision, operationRef: '11111111-1111-4111-8111-111111111111', itemId: 'food-1', step: 1 }
+    const changed = await f.trade.cartChange(args)
+    assert.equal(changed.quantity, 3); assert.deepEqual(f.raw.couple_group[0].cart_item_d_t_o_list[1], other)
+    await assert.rejects(f.trade.cartChange(args), error => error.code === 'cart-duplicate')
+    await assert.rejects(f.trade.cartChange({ ...args, operationRef: '22222222-2222-4222-8222-222222222222' }), error => error.code === 'cart-changed')
+    const mutations = f.calls.filter(call => call.api === 'cart' && JSON.parse(JSON.parse(call.payload.bizInfos).cartOperateParam).operating_entities.length)
+    assert.equal(mutations.length, 1); assert.equal(mutations[0].retry, false)
+  } finally { await f.close() }
+})
+
+test('preview, expiry, cap, confirmation and changed cart reject before any order request', async () => {
+  for (const scenario of ['preview', 'expiry', 'cap', 'confirmation', 'cart']) {
+    const f = await fixture({ dryRun: scenario === 'preview', cap: scenario === 'cap' ? 20 : 35 })
+    try {
+      const quote = await getQuote(f), args = submitArgs(quote)
+      if (scenario === 'expiry') f.advance()
+      if (scenario === 'confirmation') args.confirmedCents++
+      if (scenario === 'cart') f.raw.couple_group[0].cart_item_d_t_o_list[0].quantity++
+      await assert.rejects(f.trade.submit(args)); assert(!f.calls.some(value => value.api === 'submit'))
+    } finally { await f.close() }
+  }
+})
+
+test('single-attempt submission persists first, returns a payment link and rejects duplicate confirmation', async () => {
+  const f = await fixture()
+  try {
+    const quote = await getQuote(f), order = await f.trade.submit(submitArgs(quote))
+    assert.deepEqual(order.orderIds, ['123456']); assert.equal(order.paymentStatus, 'unconfirmed')
+    assert.equal(f.calls.filter(call => call.api === 'submit').length, 1)
+    assert.equal(f.calls.find(call => call.api === 'submit').retry, false)
+    await assert.rejects(f.trade.submit(submitArgs(quote)), error => error.code === 'quote-expired')
+    const reloaded = new TaobaoTrade(f.service, { journalDirectory: f.directory })
+    const history = await reloaded.tradeHistory(); assert.equal(history.attempts[0].status, 'created'); assert.equal(history.attempts[0].paymentUrl, order.paymentUrl)
+    assert(!f.calls.some(call => /payment/.test(call.api)))
+  } finally { await f.close() }
+})
+
+test('uncertain order remains reserved after restart and an identical cart cannot be resubmitted', async () => {
+  const f = await fixture()
+  try {
+    f.rejectSubmit(); const quote = await getQuote(f)
+    await assert.rejects(f.trade.submit(submitArgs(quote)), error => error.code === 'order-unknown')
+    const record = JSON.parse(await readFile(join(f.directory, 'trade-attempts.json'), 'utf8')).attempts[0]
+    assert.equal(record.status, 'unknown'); assert.equal(record.amountCents, quote.totalCents)
+    const next = await getQuote(f); await assert.rejects(f.trade.submit(submitArgs(next)), error => error.code === 'order-unknown')
+    assert.equal(f.calls.filter(call => call.api === 'submit').length, 1)
+  } finally { await f.close() }
+})
+
+test('confirmed and uncertain orders count toward the shared daily cap', async () => {
+  const f = await fixture({ budget: 40 })
+  try {
+    await f.trade.submit(submitArgs(await getQuote(f)))
+    f.raw.couple_group[0].cart_item_d_t_o_list[0].update_at = 200000
+    const next = await getQuote(f)
+    await assert.rejects(f.trade.submit(submitArgs(next)), error => error.code === 'over-budget')
+    assert.equal(f.calls.filter(call => call.api === 'submit').length, 1)
+  } finally { await f.close() }
+})

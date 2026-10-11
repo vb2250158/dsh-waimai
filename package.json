@@ -1,7 +1,7 @@
 {
   "name": "dsh-waimai",
-  "version": "0.2.15",
-  "description": "DSH 外卖助手：淘宝闪购与盒马 HTTP 登录、地址、历史订单；多账号、店铺与商品分页、规格、盒马只读购物车，下单接口待验证。",
+  "version": "0.2.16",
+  "description": "DSH 外卖助手：淘宝闪购与盒马 HTTP 登录、地址、菜单和历史订单；闪购购物车、实时报价、确认下单与官方支付入口。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -19,7 +19,8 @@
     "MIGRATION-0.2.2.md",
     "LICENSE",
     "icon.svg",
-    "MIGRATION-0.2.5.md"
+    "MIGRATION-0.2.5.md",
+    "MIGRATION-0.2.16.md"
   ],
   "dsh": {
     "bundle": {
@@ -31,7 +32,7 @@
   },
   "scripts": {
     "test": "node --test \"tests/*.test.mjs\"",
-    "check": "node --check lib/index.js && node --check lib/mcp-server.js && node --check lib/mcp-bridge.js && node --check lib/automation.js && node --check lib/payments.js && node --check lib/env.js && node --check lib/paths.js && node --check lib/login.js && node --check lib/taobao-qr.js && node --check lib/taobao-ucc.js && node --check lib/login-rpc.js && node --check lib/account-data.js && node --check lib/account-pool.js && node --check lib/address-data.js && node --check lib/browse-data.js && node --check lib/platform-service.js && node --check lib/client/index.js && node --check lib/hema-data.js && node --check lib/hema-login.js && node --check lib/hema-service.js"
+    "check": "node --check lib/index.js && node --check lib/mcp-server.js && node --check lib/mcp-bridge.js && node --check lib/automation.js && node --check lib/payments.js && node --check lib/env.js && node --check lib/paths.js && node --check lib/login.js && node --check lib/taobao-qr.js && node --check lib/taobao-ucc.js && node --check lib/login-rpc.js && node --check lib/account-data.js && node --check lib/account-pool.js && node --check lib/address-data.js && node --check lib/browse-data.js && node --check lib/platform-service.js && node --check lib/client/index.js && node --check lib/hema-data.js && node --check lib/hema-login.js && node --check lib/hema-service.js && node --check lib/trade-data.js && node --check lib/taobao-trade.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

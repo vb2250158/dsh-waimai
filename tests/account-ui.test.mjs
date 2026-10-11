@@ -111,6 +111,12 @@ async function mount(rpc, options = {}) {
   rpc = { call(channel, endpoint, payload) {
     if (endpoint === 'platforms') return Promise.resolve(ok(platforms))
     if (endpoint === 'addresses') return options.addresses ? options.addresses(payload) : Promise.resolve(ok({ accountId: profile.id, addresses: [], selectedRef: null }))
+    if (payload.platformId === 'taobao' && ['cart', 'tradeHistory', 'cartChange', 'checkout', 'submit'].includes(endpoint)) {
+      if (options.trade) return options.trade(endpoint, payload)
+      return Promise.resolve(ok(endpoint === 'tradeHistory' ? { platformId: 'taobao', accountId: profile.id, attempts: [] }
+        : { platformId: 'taobao', accountId: profile.id, addressRef: payload.addressRef, shopId: payload.shopId,
+          revision: 'b'.repeat(64), items: [], quantity: 0, invalidCount: 0, totalCents: 0 }))
+    }
     return originalCall(channel, endpoint, payload)
   } }
   let module, Card, cardProps, dictionary
@@ -135,6 +141,61 @@ async function mount(rpc, options = {}) {
   await act(async () => { renderer = create(React.createElement(Card, cardProps)) })
   return { renderer, close: () => { act(() => renderer.unmount()); for (const dispose of disposers.reverse()) dispose?.() } }
 }
+
+test('Taobao cart shows an expiring server quote; creation requires explicit confirmation and payment is an official link', async () => {
+  const addressRef = 'a'.repeat(64), ref = '11111111-1111-4111-8111-111111111111', calls = []
+  const quoteRef = '22222222-2222-4222-8222-222222222222'
+  let quantity = 0, failSubmit = false
+  const cart = () => ({ platformId: 'taobao', accountId: profile.id, addressRef, shopId: 'store-17', revision: 'b'.repeat(64), quantity,
+    invalidCount: 0, items: quantity ? [{ ref: 'c'.repeat(64), name: '示例饭', quantity, totalCents: 2000, available: true }] : [], totalCents: 2000 })
+  const mounted = await mount({ async call(_channel, endpoint) {
+    if (endpoint === 'status') return ok({ authenticated: true, state: 'logged-in', viewAccountRef: ref, accounts: [{ ref, externalId: profile.id }] })
+    if (endpoint === 'profile') return ok(profile)
+    if (endpoint === 'nearbyShops') return ok({ accountId: profile.id, addressRef, shops: [{ id: 'store-17', name: '示例店' }], nextCursor: null })
+    if (endpoint === 'probeMenu') return ok({ accountId: profile.id, addressRef, shopId: 'store-17', categories: [{ id: 'main', name: '主食', items: [
+      { id: 'food-1', name: '示例饭', description: '', imageUrl: null, price: '20', availability: 'available', tips: [], options: [] }] }] })
+    throw Error('unexpected request')
+  } }, { config: { dryRun: false }, addresses: async () => ok({ accountId: profile.id, selectedRef: addressRef,
+    addresses: [{ ref: addressRef, address: '示例地址', usable: true }] }), trade: async (endpoint, payload) => {
+      calls.push({ endpoint, payload }); assert.equal(payload.accountRef, ref)
+      if (endpoint === 'tradeHistory') return ok({ accountId: profile.id, attempts: [] })
+      if (endpoint === 'cart') return ok(cart())
+      if (endpoint === 'cartChange') { assert.equal(payload.itemId, 'food-1'); quantity++; return ok(cart()) }
+      if (endpoint === 'checkout') return ok({ ...cart(), merchant: '示例店', address: { address: '示例地址', contact: '示例用户', maskedPhone: '130****0000' },
+        items: [{ name: '示例饭', quantity: 1, priceCents: 2000 }], fees: [{ name: '配送费', amountCents: 100 }], discountCents: 0,
+        totalCents: 2100, deliveryTime: '明天 10:00 开始配送', quoteRef, expiresAt: Date.now() + 120000, previewOnly: false, maxOrderCents: 3500 })
+      if (endpoint === 'submit') return failSubmit ? { ok: false, error: { code: 'order-unknown', message: '下单结果未确认，勿重复提交' } }
+        : ok({ ...cart(), orderRef: quoteRef, orderIds: ['123456'], amountCents: 2100, paymentUrl: 'https://r.ele.me/payment?synthetic=1', paymentStatus: 'unconfirmed' })
+      throw Error('unexpected trade operation')
+    } })
+  try {
+    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(value => text(value.props.children) === label)
+    await act(async () => button('点餐').props.onClick())
+    await act(async () => button('查看菜单').props.onClick())
+    await act(async () => button('加入购物车').props.onClick())
+    assert.equal(calls.filter(call => call.endpoint === 'cartChange').length, 1)
+    await act(async () => button('去结算').props.onClick())
+    assert.equal(button('确认创建订单').props.disabled, true)
+    assert(text(mounted.renderer.toJSON()).includes('实付: ¥21.00'))
+    assert(text(mounted.renderer.toJSON()).includes('明天 10:00 开始配送'))
+    const confirm = () => root.findAllByType('label').find(node => text(node.props.children) === '我已核对商品、配送地址、时间和实付金额').findByType('span')
+    await act(async () => confirm().props.onChange({ target: { checked: true } }))
+    assert.equal(button('确认创建订单').props.disabled, false)
+    await act(async () => { button('确认创建订单').props.onClick(); button('确认创建订单').props.onClick() })
+    assert.equal(calls.filter(call => call.endpoint === 'submit').length, 1)
+    assert.deepEqual(JSON.parse(JSON.stringify(calls.find(call => call.endpoint === 'submit').payload)), { platformId: 'taobao', accountRef: ref, quoteRef, confirmed: true, confirmedCents: 2100 })
+    assert.equal(root.findByType('a').props.href, 'https://r.ele.me/payment?synthetic=1')
+    assert(!calls.some(call => /pay/.test(call.endpoint)))
+    assert.equal(button('去结算').props.disabled, true)
+    await act(async () => button('刷新购物车').props.onClick())
+    failSubmit = true
+    await act(async () => button('去结算').props.onClick())
+    await act(async () => confirm().props.onChange({ target: { checked: true } }))
+    await act(async () => button('确认创建订单').props.onClick())
+    assert(text(mounted.renderer.toJSON()).includes('勿重复提交'))
+    assert(!button('确认创建订单'))
+  } finally { mounted.close() }
+})
 
 test('Taobao QR renders in the private plugin page, preserves the current account until linked and cancels on tab change', async () => {
   const calls = [], attemptId = '11111111-1111-4111-8111-111111111111'
@@ -409,7 +470,7 @@ test('ordering shows nearby server merchants after address selection and surface
     await act(async () => root.findAllByType('button').find(button => text(button.props.children) === '查看菜单').props.onClick())
     assert(text(mounted.renderer.toJSON()).includes('平台要求人工验证'))
     assert(!root.findAllByType('button').some(button => ['创建订单', '支付'].includes(text(button.props.children))))
-    assert(text(mounted.renderer.toJSON()).includes('下单与支付暂未开放'))
+    assert(!root.findAllByType('button').some(button => text(button.props.children) === '去结算'))
   } finally { mounted.close() }
 })
 

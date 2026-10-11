@@ -1,0 +1,11 @@
+{
+  "merchant": "示例店",
+  "totalCents": 2100,
+  "items": [
+    { "name": "示例饭", "quantity": 1, "priceCents": 2000, "specification": "" },
+    { "name": "无需餐具", "quantity": 1, "priceCents": 0, "specification": "" }
+  ],
+  "fees": [{ "name": "配送费", "amountCents": 100 }],
+  "discountCents": 0,
+  "deliveryTime": "明天 10:00 开始配送"
+}

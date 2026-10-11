@@ -41,11 +41,13 @@ test('geohash decoder returns the documented coordinate cell and rejects invalid
   for (const value of [null, '', 'abc', 'abcde!', 'iiiiiiii']) assert.equal(addressCoordinates(value), null)
 })
 
-test('unsupported platforms reject before account reads and all purchasing capabilities are disabled', async () => {
+test('unsupported platforms and automatic purchasing reject before account reads; Taobao quoting is available', async () => {
   const f = await fixture()
   try {
     for (const id of ['meituan', 'jd', 'invalid']) assert.throws(() => f.service.addresses(id))
-    for (const id of ['taobao', 'meituan', 'jd']) for (const capability of ['checkout', 'createOrder', 'payment']) assert.throws(() => f.service.requireOrdering(id, capability))
+    for (const id of ['taobao', 'meituan', 'jd']) for (const capability of ['createOrder', 'payment']) assert.throws(() => f.service.requireOrdering(id, capability))
+    for (const id of ['meituan', 'jd']) assert.throws(() => f.service.requireOrdering(id, 'checkout'))
+    assert.doesNotThrow(() => f.service.requireOrdering('taobao', 'checkout'))
     assert.deepEqual(f.calls, [])
     const definitions = f.service.list(); definitions[0].capabilities.createOrder = true
     assert.equal(f.service.list()[0].capabilities.createOrder, false)

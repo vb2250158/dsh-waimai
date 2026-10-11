@@ -67,7 +67,8 @@
     "login.taobao.com",
     "login.m.taobao.com",
     "passport.taobao.com",
-    "h5api.m.taobao.com"
+    "h5api.m.taobao.com",
+    "alsc-buy2.ele.me"
   ],
   "phoneCode": "86",
   "countryCode": "CN",
@@ -140,5 +141,35 @@
     "version": "1.0",
     "appKey": "12574478",
     "jsv": "2.7.2"
+  },
+  "cart": {
+    "url": "https://alsc-buy2.ele.me/h5/mtop.eleme.waimai.carts.shop.operate.um/1.0/",
+    "api": "mtop.eleme.waimai.carts.shop.operate.um",
+    "method": "POST",
+    "version": "1.0",
+    "appKey": "12574478",
+    "jsv": "2.7.2"
+  },
+  "checkout": {
+    "url": "https://alsc-buy2.ele.me/h5/mtop.alsc.bpgw.trade.order.build/1.0/",
+    "api": "mtop.alsc.bpgw.trade.order.build",
+    "method": "POST",
+    "version": "1.0",
+    "appKey": "12574478",
+    "jsv": "2.7.2",
+    "headers": {
+      "asac": "alscGpdG4bag44EYyJBRPX"
+    }
+  },
+  "submit": {
+    "url": "https://alsc-buy2.ele.me/h5/mtop.alsc.bpgw.trade.order.submit/1.0/",
+    "api": "mtop.alsc.bpgw.trade.order.submit",
+    "method": "POST",
+    "version": "1.0",
+    "appKey": "12574478",
+    "jsv": "2.7.2",
+    "headers": {
+      "asac": "alscGpdG4bag44EYyJBRPX"
+    }
   }
 }

@@ -37,6 +37,10 @@ const EXPECTED_TOOLS = [
   'account_probe_menu',
   'account_product_detail',
   'account_cart',
+  'account_cart_change',
+  'account_checkout',
+  'account_submit',
+  'account_trade_history',
   'account_list',
   'account_begin',
   'account_cancel',
@@ -135,7 +139,7 @@ test('preview mode blocks checkout and payment before launching a browser', asyn
 test('unverified purchasing and unavailable platforms stop even with preview disabled', async () => {
   const { client, close } = await connect({ DRY_RUN: 'false' })
   try {
-    for (const name of ['preview_checkout', 'submit_order', 'request_payment']) {
+    for (const name of ['submit_order', 'request_payment']) {
       const value = JSON.parse((await client.callTool({ name, arguments: {} })).content[0].text)
       assert.equal(value.success, false)
       assert.equal(value.code, 'ordering-unverified')

@@ -12,14 +12,17 @@
       "addresses": true,
       "orders": true,
       "menuProbe": true,
-      "checkout": false,
+      "checkout": true,
       "createOrder": false,
       "payment": false,
       "coupons": false,
       "nearbyShops": true,
-      "menu": true
+      "menu": true,
+      "cart": true,
+      "manualOrder": true,
+      "paymentHandoff": true
     },
-    "reason": "ordering-unverified"
+    "reason": "manual-order-only"
   },
   {
     "id": "hema",
