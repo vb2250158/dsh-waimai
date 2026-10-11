@@ -14,12 +14,12 @@ whenToUse: 用户表达点餐、外卖、饮品或餐食购买意图时
 
 `open_browser`、`search_food`、`enter_shop`、`get_menu`、`claim_coupons`、`apply_coupons`、`add_to_cart`、`view_cart`、`submit_order`、`request_payment`、`get_order_status`。
 
-浏览器是有头窗口，登录和验证码由用户在窗口里完成。所有工具返回 `{ success, data }` 结构的 JSON。
+用户可在插件设置页通过手机号与短信验证码直接登录；登录输入由设置页私有接口处理，不要求用户在聊天里发送验证码，不通过 Agent 工具提交。点餐浏览器复用已确认的本机 Cookie；平台额外验证仍需由用户处理。所有点餐工具返回 `{ success, data }` 结构的 JSON。
 
 ## 操作流程
 
 1. **确认需求**：问清想吃什么、口味、预算。用户没给配送地址就先问地址——地址由用户在页面里选择，Agent 不要臆造。
-2. **打开页面**：调用 `mcp__waimai__open_browser`。若返回的页面提示登录，请用户在弹出的浏览器窗口中完成登录，然后继续。
+2. **打开页面**：调用 `mcp__waimai__open_browser`。若页面提示登录，引导用户先在插件设置页登录，再继续；接口要求额外验证时由用户在平台完成，不代用户破解验证。
 3. **搜索**：调用 `mcp__waimai__search_food`，参数 `keyword` 用用户的原话（如「奶茶」「盖饭」）。
 4. **推荐**：把 `data.shops` 里的店铺名、评分、配送时间、起送价列给用户，等用户选择。不要替用户决定。
 5. **进店与菜单**：调用 `mcp__waimai__enter_shop`（`shopName` 用搜索结果里的原文），再调用 `mcp__waimai__get_menu`，把菜品名和价格列给用户。

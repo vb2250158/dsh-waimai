@@ -74,6 +74,7 @@ test('a preview tick persists its claim before notification and does not run twi
   let callback
   let previews = 0
   const ctx = {
+    inject() {},
     on() {},
     logger: { warn() {}, info(message) { if (message.includes('未下单')) previews++ } },
     effect(create) { disposers.push(create()) },
@@ -113,6 +114,7 @@ test('the Host bridge executes advertised MCP tools and unregisters them on stop
     assert.equal(direct.success, true)
     assert.equal(direct.data.dryRun, true)
     const tool = registered.get('mcp__waimai__get_status')
+    for (const name of ['login_status', 'login_send_code', 'login_complete']) assert.equal(registered.has(`mcp__waimai__${name}`), false)
     const result = await tool.execute({}, { signal: new AbortController().signal })
     assert.equal(JSON.parse(result.content[0].text).success, true)
   } finally { await bridge.stop() }

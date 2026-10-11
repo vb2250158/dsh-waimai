@@ -21,6 +21,9 @@ const SERVER_ENTRY = join(dirname(fileURLToPath(import.meta.url)), '..', 'lib', 
 
 /** Tools the server must advertise, in the order the model sees them. */
 const EXPECTED_TOOLS = [
+  'login_status',
+  'login_send_code',
+  'login_complete',
   'get_status',
   'open_browser',
   'search_food',

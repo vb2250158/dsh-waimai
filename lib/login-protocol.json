@@ -1,0 +1,21 @@
+{
+  "origin": "https://ipassport.ele.me",
+  "bootstrapPath": "/mini_login.htm",
+  "bootstrapQuery": {
+    "lang": "zh_cn",
+    "appName": "eleme",
+    "appEntrance": "eleme_sms_h5",
+    "styleType": "vertical",
+    "notLoadSsoView": "true",
+    "notKeepLogin": "false",
+    "isMobile": "true"
+  },
+  "apiPaths": {
+    "sendSmsApi": "/newlogin/sms/send.do",
+    "smsLoginApi": "/newlogin/sms/login.do",
+    "hasLoginApi": "/newlogin/hasLogin.do"
+  },
+  "allowedHosts": ["ipassport.ele.me", "h5.ele.me", "passport.ele.me", "waimai-guide.ele.me"],
+  "phoneCode": "86",
+  "countryCode": "CN"
+}

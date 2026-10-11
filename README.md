@@ -31,6 +31,16 @@ dsh plugin --profile web add --save-exact github:vb2250158/dsh-waimai#<40位提�
 
 ## 配置
 
+### 账号登录
+
+在「插件 → dsh-waimai → 登录饿了么」填写中国大陆手机号，点击「获取验证码」，再填写短信验证码并点击「登录」。「检查登录状态」会调用平台接口复核，不发送短信、不打开浏览器、不下单。登录输入不进入 Agent 工具调用或插件配置。
+
+登录通过 `https://ipassport.ele.me` 的 `/mini_login.htm` 初始化会话，再调用页面下发的 `/newlogin/sms/send.do`、`/newlogin/sms/login.do` 和 `/newlogin/hasLogin.do`。URL 和字段来自 2026-10-11 的匿名登录页抓包及客户端代码；初始化仍读取登录页返回的 JSON，但不打开 H5 窗口、不执行远程脚本。每次获取验证码都会获取新的 CSRF 和会话参数。平台要求滑块或其他验证时停止，不生成或绕过验证凭据；现阶段只支持已有账号，不自动注册。
+
+Cookie 只保存在本机 `$DSH_HOME/waimai/login-state.json`；该文件包含登录凭据，不应上传、提交或随环境同步。手机号、验证码和短信令牌只保存在进程内，插件重载后需重新获取验证码。`persistLogin: false` 不读写该文件，临时登录只在当前 MCP 进程内有效。点餐浏览器会接收已确认登录的 Cookie；点餐与支付仍通过浏览器页面执行。
+
+2026-10-11 已验证纯 HTTP 初始化和未登录状态响应；短信发送、验证码登录成功及点餐页面登录态复用必须由真实账号另行验收。页面下发的设备参数可直接使用，但客户端动态 `ua` 参数当前未生成；若平台因此要求额外验证，插件会报告停止，不能保证所有账号免浏览器登录。
+
 ### 首次使用与 0.1.1 升级
 
 0.1.1 默认开启 `dryRun` 预览模式、默认手动支付，新任务默认禁用。先运行 `mcp__waimai__get_status` 检查浏览器，再配置任务并调用 `mcp__waimai__preview_task`（参数 `taskId`）查看时间、菜单和上限。预览工具不打开浏览器、不写执行状态、不下单；启用的定时任务在预览模式下只记录预览通知。
@@ -48,6 +58,8 @@ dsh plugin --profile web add --save-exact github:vb2250158/dsh-waimai#<40位提�
 | `deliveryAddress` | `''` | 默认配送地址（仅记录，地址仍需在页面里选择） |
 | `headless` | `false` | 无头模式。**登录和支付需要可见窗口**，除非已登录且免密支付可用 |
 | `persistLogin` | `true` | 登录状态持久化在 `$DSH_HOME/waimai/browser-profile` |
+| `loginTimeoutMs` | `20000` | 单个登录接口请求超时（毫秒，1000–120000） |
+| `smsResendSeconds` | `60` | 验证码重发间隔（秒，60–600）；结果未确认也占用间隔 |
 
 ### 金额与支付
 
@@ -135,6 +147,7 @@ dsh plugin --profile web add --save-exact github:vb2250158/dsh-waimai#<40位提�
 | 路径 | 内容 |
 | --- | --- |
 | `browser-profile/` | Chromium 用户数据（登录状态） |
+| `login-state.json` | HTTP 登录 Cookie，仅本机保存，不包含手机号、验证码或短信令牌 |
 | `screenshots/` | 失败时的页面截图 |
 | `order-log.jsonl` | 支付审计流水 |
 | `notifications.jsonl` | 自动化任务的通知记录 |
