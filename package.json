@@ -1,6 +1,6 @@
 {
   "name": "dsh-waimai",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "DSH 外卖账号助手：淘宝扫码与短信 HTTP 登录、独立多账号会话、头像、地址和订单读取；平台与账号下拉，购买接口待验证。",
   "type": "module",
   "main": "lib/index.js",

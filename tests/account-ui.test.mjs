@@ -25,15 +25,15 @@ async function mount(rpc, options = {}) {
   } }
   let module, Card, cardProps, dictionary
   const disposers = []
-  const primitives = Object.fromEntries(['Button', 'Input', 'Switch', 'Menu', 'Checkbox', 'Tag', 'IconPlusOutlineRegular', 'IconChevronDownOutlineRegular', 'IconTrashOutlineRegular'].map(name =>
+  const primitives = Object.fromEntries(['Button', 'Input', 'Switch', 'Menu', 'Checkbox', 'Tag', 'StateDot', 'IconPlusOutlineRegular', 'IconChevronDownOutlineRegular', 'IconTrashOutlineRegular'].map(name =>
     [name, props => React.createElement(name === 'Button' ? 'button' : 'span', props, props.children)]))
   runInNewContext(await readFile(new URL('../lib/client/index.js', import.meta.url), 'utf8'), {
     window: { __ModuleLoader__: { load(entry) { module = entry.factory(name => name === 'react' ? React : primitives) } } },
     document: { createElement: () => ({ dataset: {}, remove() {} }), head: { appendChild() {} } },
     structuredClone, setInterval, clearInterval, setTimeout, clearTimeout, crypto: { randomUUID: () => 'synthetic-id' },
   })
-  const snapshot = { status: 'ready', writable: true, revision: 1, value: Config({}).get() }
-  const form = { subscribe: () => () => {}, getSnapshot: () => snapshot, mutate: async () => true }
+  const snapshot = { status: 'ready', writable: true, revision: 1, value: Config(options.config || {}).get() }
+  const form = { subscribe: () => () => {}, getSnapshot: () => snapshot, mutate: options.mutate || (async () => true) }
   const ctx = {
     effect(fn) { disposers.push(fn()) }, connection: { rpc },
     locale: { register(_namespace, values) { dictionary = values.zh; return () => {} }, bind: () => key => dictionary[key] },
@@ -51,15 +51,17 @@ test('Taobao QR renders in the private plugin page, preserves the current accoun
   const mounted = await mount({ async call(_channel, endpoint, payload) {
     calls.push({ endpoint, payload })
     if (endpoint === 'status') return ok({ authenticated: true, state: 'logged-in', loginMethod: 'sms' })
+    if (endpoint === 'accountBegin') return ok({ authenticated: true, state: 'logged-in', loginMethod: 'sms', addingAccount: true })
     if (endpoint === 'profile') return ok(profile)
-    if (endpoint === 'qrStart') return ok({ authenticated: true, state: 'logged-in', qr: { attemptId, state: 'business-unconfirmed', image: 'data:image/png;base64,synthetic', pollAfterMs: 2000 } })
+    if (endpoint === 'qrStart') return ok({ authenticated: true, state: 'logged-in', addingAccount: true, qr: { attemptId, state: 'business-unconfirmed', image: 'data:image/png;base64,synthetic', pollAfterMs: 2000 } })
     if (endpoint === 'qrCancel') return ok({ qr: { attemptId, state: 'canceled' } })
     return ok({ accountId: profile.id, orders: [], nextCursor: null })
   } })
   try {
     const root = mounted.renderer.root
     const click = label => root.findAllByType('button').find(button => text(button.props.children) === label).props.onClick()
-    await act(async () => click('淘宝扫码'))
+    assert(!root.findAllByType('button').some(button => text(button.props.children) === '获取淘宝登录二维码'))
+    await act(async () => click('添加账号'))
     await act(async () => click('获取淘宝登录二维码'))
     const image = root.findAllByType('img').find(value => value.props.alt === '淘宝扫码')
     assert.equal(image.props.src, 'data:image/png;base64,synthetic')
@@ -112,6 +114,7 @@ test('adding a SMS account retains the saved account while entering the new phon
   try {
     const root = mounted.renderer.root, click = label => root.findAllByType('button').find(button => text(button.props.children) === label).props.onClick()
     await act(async () => click('添加账号'))
+    await act(async () => click('手机号短信'))
     let phone = root.findAll(node => node.props.type === 'tel').find(node => node.type === 'span')
     act(() => phone.props.onChange({ target: { value: '13900000000' } }))
     await act(async () => click('获取验证码'))
@@ -203,7 +206,7 @@ test('address selection confirms the saved reference and hides addresses from an
     const select = () => root.findAllByType('button').find(button => text(button.props.children) === '使用此地址')
     assert.equal(select().props.disabled, false)
     await act(async () => select().props.onClick())
-    assert.equal(select().props.disabled, true)
+    assert.equal(select(), undefined)
     assert(text(mounted.renderer.toJSON()).includes('当前配送地址'))
     assert.deepEqual(JSON.parse(JSON.stringify(calls.find(call => call.endpoint === 'selectAddress').payload)), { platformId: 'taobao', accountId: profile.id, addressRef })
     accountId = '999'
@@ -226,7 +229,7 @@ test('ordering shows only server merchants, surfaces verification and keeps purc
     await act(async () => root.findAllByType('button').find(button => text(button.props.children) === '点餐').props.onClick())
     const selector = root.findAll(node => node.type === 'span' && node.props.className === 'waimai-choice').find(node => node.props.items.some(item => item.id === 'synthetic-shop'))
     await act(async () => selector.props.onSelect('synthetic-shop'))
-    await act(async () => root.findAllByType('button').find(button => text(button.props.children) === '检查菜单接口').props.onClick())
+    await act(async () => root.findAllByType('button').find(button => text(button.props.children) === '检查菜单').props.onClick())
     assert(text(mounted.renderer.toJSON()).includes('平台要求人工验证'))
     for (const label of ['创建订单', '支付']) assert.equal(root.findAllByType('button').find(button => text(button.props.children) === label).props.disabled, true)
   } finally { mounted.close() }
@@ -251,4 +254,65 @@ test('account mismatches hide private data, and late reads after unmount cannot 
   second.close()
   await act(async () => late.resolve(ok(profile)))
   assert.equal(second.renderer.toJSON(), null)
+})
+
+test('navigation retains the account context across settings and only shows login fields while adding an account', async () => {
+  const first = '11111111-1111-4111-8111-111111111111', calls = []
+  const mounted = await mount({ async call(_channel, endpoint, payload) {
+    calls.push({ endpoint, payload })
+    if (endpoint === 'status') return ok({ authenticated: true, state: 'logged-in', loginMethod: 'taobao-qr', viewAccountRef: first,
+      accounts: [{ ref: first, nickname: profile.nickname, externalId: profile.id, loginMethod: 'taobao-qr' }] })
+    if (endpoint === 'profile') return ok(profile)
+    return ok({ accountId: profile.id, orders: [order], nextCursor: null })
+  } })
+  try {
+    const root = mounted.renderer.root, click = label => root.findAllByType('button').find(button => text(button.props.children) === label).props.onClick()
+    assert(!root.findAll(node => node.props.type === 'tel').length)
+    assert(!root.findAllByType('button').some(button => text(button.props.children) === '获取淘宝登录二维码'))
+    assert(root.findAll(node => Array.isArray(node.props.items)).some(node => node.props.items.some(item => item.label.includes('淘宝扫码'))))
+    await act(async () => click('点单设置'))
+    assert(root.findAll(node => node.props.selectedId === first).length)
+    await act(async () => click('历史订单'))
+    assert.equal(calls.filter(call => call.endpoint === 'status').length, 1)
+    assert.equal(calls.findLast(call => call.endpoint === 'orders').payload.accountRef, first)
+    const details = root.findAllByType('details').find(node => text(node).includes(order.id))
+    assert(details); assert.notEqual(details.props.open, true)
+  } finally { mounted.close() }
+})
+
+test('a failed same-account history refresh keeps the last verified page and provides a retry action', async () => {
+  let rejected = false
+  const mounted = await mount({ async call(_channel, endpoint) {
+    if (endpoint === 'status') return ok({ authenticated: true, state: 'logged-in' })
+    if (endpoint === 'profile') return ok(profile)
+    if (rejected) throw Error('synthetic transport failure')
+    return ok({ accountId: profile.id, orders: [order], nextCursor: null })
+  } })
+  try {
+    const root = mounted.renderer.root, click = label => root.findAllByType('button').find(button => text(button.props.children) === label).props.onClick()
+    await act(async () => click('历史订单'))
+    rejected = true
+    await act(async () => click('刷新订单'))
+    assert(text(mounted.renderer.toJSON()).includes(order.merchantName))
+    assert(text(mounted.renderer.toJSON()).includes('读取失败'))
+    assert.equal(root.findAllByType('button').find(button => text(button.props.children) === '刷新订单').props.disabled, false)
+  } finally { mounted.close() }
+})
+
+test('the task view shows only its platform and edits preserve tasks belonging to other platforms', async () => {
+  let operations
+  const config = { autoTasks: [{ id: 'other', name: '其他平台任务', platformId: 'jd' }, { id: 'current', name: '当前平台任务', platformId: 'taobao' }] }
+  const mounted = await mount({ async call(_channel, endpoint) { return endpoint === 'profile' ? ok(profile) : ok({ authenticated: true, state: 'logged-in' }) } },
+    { config, mutate: async ops => { operations = ops; return true } })
+  try {
+    const root = mounted.renderer.root, click = label => root.findAllByType('button').find(button => text(button.props.children) === label).props.onClick()
+    await act(async () => click('自动化任务'))
+    assert(text(mounted.renderer.toJSON()).includes('当前平台任务'))
+    assert(!text(mounted.renderer.toJSON()).includes('其他平台任务'))
+    await act(async () => root.findAllByType('button').find(button => button.props['aria-label'] === '编辑任务: 当前平台任务').props.onClick())
+    act(() => root.findAll(node => node.type === 'span' && node.props['aria-label'] === '任务名称')[0].props.onChange({ target: { value: '修改后的任务' } }))
+    await act(async () => root.findByType('form').props.onSubmit({ preventDefault() {} }))
+    assert.equal(operations[0].value[0].name, '其他平台任务')
+    assert.equal(operations[0].value[1].name, '修改后的任务')
+  } finally { mounted.close() }
 })
