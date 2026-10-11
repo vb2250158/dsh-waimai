@@ -21,6 +21,15 @@ async function fixture(options = {}) {
   const http = {
     get: async url => {
       calls.push({ method: 'GET', url })
+      if (url.includes('/h5/mtop.alsc.user.session.ele.check/')) {
+        if (!cookies.some(c=>c.name==='_m_h5_tk') || options.expiredToken) {
+          if (!options.expiredToken) cookies.push({ ...cookies[0], name:'_m_h5_tk', domain:'.ele.me', value:'synthetic-mtop-token_9999999999999' })
+          return { ...response({}), json: async()=>({ ret:['FAIL_SYS_TOKEN_EMPTY::synthetic'], data:{} }) }
+        }
+        return { ...response({}), json: async()=> options.session || ({ ret:['SUCCESS::synthetic'], data:{value:loggedIn && !options.unconfirmed ? {localId:'12345',havanaId:'67890'} : {localId:0,havanaId:0}} }) }
+      }
+      if (url.startsWith('https://pass.eleme.hk/add')) return { ...response({}), status:()=>302, headers:()=>({ location:options.redirect || 'https://tb.eleme.hk/complete' }) }
+      if (url.startsWith('https://tb.eleme.hk/')) return response({})
       const seed = { loginFormData: { _csrf_token: `synthetic-csrf-${++generation}`, appName: 'eleme', appEntrance: 'eleme_sms_h5', fromSite: '25' }, umidToken: 'synthetic-umid' }
       const config = { api: Object.fromEntries(Object.entries(protocol.apiPaths).map(([k,v]) => [k, `${v}?appName=eleme&fromSite=25`])), smsCodeLength: 6 }
       return { ...response({}), text: async () => `window.viewData = ${JSON.stringify(seed)};\nwindow.viewConfig = ${JSON.stringify(config)};` }
@@ -31,7 +40,11 @@ async function fixture(options = {}) {
         if (options.sendError) throw new Error('network failed with synthetic-private-token')
         return response(options.send || { smsToken: 'synthetic-sms-secret' })
       }
-      if (url.includes('/sms/login.do')) { loggedIn = options.loginAccepted !== false; return response(options.login || { user_id: '12345' }) }
+      if (url.includes('/sms/login.do')) {
+        loggedIn = options.loginAccepted !== false
+        if(loggedIn) cookies.push({ ...cookies[0], name:'SID', domain:'.ele.me' }, { ...cookies[0],name:'last_u_eleme_eleme_sms_h5',value:phone }, { ...cookies[0],name:'last_cc',value:'CN' })
+        return response(options.login || { user_id: '12345', asyncUrls:['https://pass.eleme.hk/add?cookie2=synthetic-cookie-secret'] })
+      }
       return response(loggedIn && !options.unconfirmed ? { user_id: '12345' } : { resultCode: 100, titleMsg: 'synthetic expired session' })
     },
     storageState: async () => ({ cookies, origins: [] }), dispose: async () => {},
@@ -49,7 +62,9 @@ test('bootstrap reads JSON without executing scripts and accepts braces within J
 
 test('login URLs reject unrelated hosts, credentials, cleartext and unexpected ports', () => {
   assert.equal(loginUrl('/newlogin/sms/send.do', protocol), `${protocol.origin}/newlogin/sms/send.do`)
-  for (const url of ['https://evil.example/', 'https://ipassport.ele.me.evil.example/', 'http://ipassport.ele.me/', 'https://secret@ipassport.ele.me/', 'https://ipassport.ele.me:444/']) assert.throws(() => loginUrl(url, protocol))
+  assert.equal(loginUrl('https://pass.eleme.hk/add', protocol), 'https://pass.eleme.hk/add')
+  assert.equal(loginUrl('https://tb.eleme.hk/', protocol), 'https://tb.eleme.hk/')
+  for (const url of ['https://evil.example/', 'https://ipassport.ele.me.evil.example/', 'https://pass.eleme.hk.evil.example/add', 'https://other.eleme.hk/', 'http://pass.eleme.hk/add', 'http://ipassport.ele.me/', 'https://secret@ipassport.ele.me/', 'https://ipassport.ele.me:444/']) assert.throws(() => loginUrl(url, protocol))
 })
 
 test('HTTP login obtains fresh CSRF, keeps SMS secrets private and saves only confirmed cookies', async () => {
@@ -70,7 +85,10 @@ test('HTTP login obtains fresh CSRF, keeps SMS secrets private and saves only co
     const saved = await readFile(f.statePath, 'utf8')
     assert(!saved.includes(phone)); assert(!saved.includes('synthetic-sms-secret')); assert(!saved.includes('123456'))
     assert.equal(JSON.parse(saved).storageState.cookies[0].value, 'synthetic-cookie-secret')
-    assert.equal((await f.login.cookies()).length, 1)
+    assert((await f.login.cookies()).some(c=>c.name==='SID'))
+    assert(!(await f.login.cookies()).some(c=>c.name.startsWith('last_u_') || c.name==='last_cc'))
+    assert(f.calls.some(c=>c.url.startsWith('https://tb.eleme.hk/')))
+    assert.equal(f.calls.filter(c=>c.url.includes('/h5/mtop.alsc.user.session.ele.check/')).length, 2)
   } finally { await f.close() }
 })
 
@@ -82,6 +100,36 @@ test('status success codes and login claims without independent account confirma
     assert.equal((await f.login.complete('123456')).state, 'login-unconfirmed')
     await assert.rejects(readFile(f.statePath), { code: 'ENOENT' })
   } finally { await f.close() }
+})
+
+test('SSO redirects reject unrelated hosts and session verification requires both account identifiers', async () => {
+  const redirect = await fixture({ redirect:'https://evil.example/collect?token=synthetic-private-token' })
+  try {
+    await redirect.login.sendCode(phone)
+    await assert.rejects(redirect.login.complete('123456'), error=> /未支持/.test(error.message) && !error.message.includes('synthetic-private-token'))
+    assert(!redirect.calls.some(c=>c.url.startsWith('https://evil.example/')))
+    await assert.rejects(readFile(redirect.statePath), {code:'ENOENT'})
+  } finally { await redirect.close() }
+  for (const session of [{ret:['SUCCESS::synthetic'],data:{value:{localId:'12345',havanaId:0}}}, {ret:['UNKNOWN_FAIL_CODE::synthetic'],data:{value:{localId:'12345',havanaId:'67890'}}}]) {
+    const f=await fixture({session})
+    try {
+      await f.login.sendCode(phone)
+      assert.equal((await f.login.complete('123456')).state,'login-unconfirmed')
+      await assert.rejects(readFile(f.statePath),{code:'ENOENT'})
+    } finally {await f.close()}
+  }
+})
+
+test('Mtop token refresh is bounded and malformed account replies stop login', async () => {
+  for (const options of [{expiredToken:true},{session:{ret:[],data:{}}}]) {
+    const f=await fixture(options)
+    try {
+      await f.login.sendCode(phone)
+      await assert.rejects(f.login.complete('123456'), /业务登录/)
+      assert(f.calls.filter(c=>c.url.includes('/h5/mtop.alsc.user.session.ele.check/')).length<=2)
+      await assert.rejects(readFile(f.statePath),{code:'ENOENT'})
+    } finally {await f.close()}
+  }
 })
 
 test('a challenge stops login, registration is not submitted, and rejected SMS does not enable completion', async () => {
@@ -110,7 +158,7 @@ test('nonpersistent login shares runtime cookies but never writes durable login 
   try {
     await f.login.sendCode(phone)
     await f.login.complete('123456')
-    assert.equal((await f.login.cookies()).length, 1)
+    assert((await f.login.cookies()).some(c=>c.name==='SID'))
     await assert.rejects(readFile(f.statePath), { code: 'ENOENT' })
   } finally { await f.close() }
 })

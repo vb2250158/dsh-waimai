@@ -12,10 +12,16 @@
   },
   "apiPaths": {
     "sendSmsApi": "/newlogin/sms/send.do",
-    "smsLoginApi": "/newlogin/sms/login.do",
-    "hasLoginApi": "/newlogin/hasLogin.do"
+    "smsLoginApi": "/newlogin/sms/login.do"
   },
-  "allowedHosts": ["ipassport.ele.me", "h5.ele.me", "passport.ele.me", "waimai-guide.ele.me"],
+  "session": {
+    "url": "https://waimai-guide.ele.me/h5/mtop.alsc.user.session.ele.check/1.0/",
+    "api": "mtop.alsc.user.session.ele.check",
+    "version": "1.0",
+    "appKey": "12574478",
+    "jsv": "2.7.5"
+  },
+  "allowedHosts": ["ipassport.ele.me", "h5.ele.me", "passport.ele.me", "waimai-guide.ele.me", "pass.eleme.hk", "tb.eleme.hk"],
   "phoneCode": "86",
   "countryCode": "CN"
 }
