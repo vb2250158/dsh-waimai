@@ -37,7 +37,7 @@
     "api": "mtop.alsc.waimai.store.miniapp.store.detail.body.query.v2",
     "method": "POST", "version": "1.0", "appKey": "12574478", "jsv": "2.7.2"
   },
-  "allowedHosts": ["ipassport.ele.me", "h5.ele.me", "passport.ele.me", "waimai-guide.ele.me", "shopping.ele.me", "pass.eleme.hk", "tb.eleme.hk"],
+  "allowedHosts": ["ipassport.ele.me", "h5.ele.me", "passport.ele.me", "waimai-guide.ele.me", "shopping.ele.me", "pass.eleme.hk", "tb.eleme.hk", "login.taobao.com", "login.m.taobao.com", "passport.taobao.com"],
   "phoneCode": "86",
   "countryCode": "CN"
 }

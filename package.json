@@ -1,7 +1,7 @@
 {
   "name": "dsh-waimai",
-  "version": "0.2.0",
-  "description": "DSH 多平台外卖助手：淘宝闪购 HTTP 短信登录、账号头像、地址选择与历史订单；美团和京东待接入。购买接口未验证时停止。",
+  "version": "0.2.1",
+  "description": "DSH 多平台外卖助手：淘宝 HTTP 扫码、闪购授权复核、短信登录、账号头像与历史订单。购买接口未验证时停止。",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -29,11 +29,12 @@
   },
   "scripts": {
     "test": "node --test \"tests/*.test.mjs\"",
-    "check": "node --check lib/index.js && node --check lib/mcp-server.js && node --check lib/mcp-bridge.js && node --check lib/automation.js && node --check lib/payments.js && node --check lib/env.js && node --check lib/paths.js && node --check lib/login.js && node --check lib/login-rpc.js && node --check lib/account-data.js && node --check lib/address-data.js && node --check lib/platform-service.js && node --check lib/client/index.js"
+    "check": "node --check lib/index.js && node --check lib/mcp-server.js && node --check lib/mcp-bridge.js && node --check lib/automation.js && node --check lib/payments.js && node --check lib/env.js && node --check lib/paths.js && node --check lib/login.js && node --check lib/taobao-qr.js && node --check lib/login-rpc.js && node --check lib/account-data.js && node --check lib/address-data.js && node --check lib/platform-service.js && node --check lib/client/index.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "playwright-core": "1.61.1",
+    "qrcode": "1.5.4",
     "zod": "^4.0.0"
   },
   "peerDependencies": {

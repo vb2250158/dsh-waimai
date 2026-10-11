@@ -30,7 +30,7 @@ async function mount(rpc, options = {}) {
   runInNewContext(await readFile(new URL('../lib/client/index.js', import.meta.url), 'utf8'), {
     window: { __ModuleLoader__: { load(entry) { module = entry.factory(name => name === 'react' ? React : primitives) } } },
     document: { createElement: () => ({ dataset: {}, remove() {} }), head: { appendChild() {} } },
-    structuredClone, setInterval, clearInterval, crypto: { randomUUID: () => 'synthetic-id' },
+    structuredClone, setInterval, clearInterval, setTimeout, clearTimeout, crypto: { randomUUID: () => 'synthetic-id' },
   })
   const snapshot = { status: 'ready', writable: true, revision: 1, value: Config({}).get() }
   const form = { subscribe: () => () => {}, getSnapshot: () => snapshot, mutate: async () => true }
@@ -45,6 +45,32 @@ async function mount(rpc, options = {}) {
   await act(async () => { renderer = create(React.createElement(Card, cardProps)) })
   return { renderer, close: () => { act(() => renderer.unmount()); for (const dispose of disposers.reverse()) dispose?.() } }
 }
+
+test('Taobao QR renders in the private plugin page, preserves the current account until linked and cancels on tab change', async () => {
+  const calls = [], attemptId = '11111111-1111-4111-8111-111111111111'
+  const mounted = await mount({ async call(_channel, endpoint, payload) {
+    calls.push({ endpoint, payload })
+    if (endpoint === 'status') return ok({ authenticated: true, state: 'logged-in', loginMethod: 'sms' })
+    if (endpoint === 'profile') return ok(profile)
+    if (endpoint === 'qrStart') return ok({ authenticated: true, state: 'logged-in', qr: { attemptId, state: 'business-unconfirmed', image: 'data:image/png;base64,synthetic', pollAfterMs: 2000 } })
+    if (endpoint === 'qrCancel') return ok({ qr: { attemptId, state: 'canceled' } })
+    return ok({ accountId: profile.id, orders: [], nextCursor: null })
+  } })
+  try {
+    const root = mounted.renderer.root
+    const click = label => root.findAllByType('button').find(button => text(button.props.children) === label).props.onClick()
+    await act(async () => click('淘宝扫码'))
+    await act(async () => click('获取淘宝登录二维码'))
+    const image = root.findAllByType('img').find(value => value.props.alt === '淘宝扫码')
+    assert.equal(image.props.src, 'data:image/png;base64,synthetic')
+    assert(text(mounted.renderer.toJSON()).includes('闪购账号授权尚未确认'))
+    assert(text(mounted.renderer.toJSON()).includes(profile.nickname))
+    assert(!calls.some(value => value.endpoint === 'qrPoll'))
+    await act(async () => click('历史订单'))
+    assert(!root.findAllByType('img').some(value => value.props.alt === '淘宝扫码'))
+    assert(calls.some(value => value.endpoint === 'qrCancel' && value.payload.attemptId === attemptId))
+  } finally { mounted.close() }
+})
 
 test('the settings page renders avatar, account details and orders, replaces pages and clears data on logout', async () => {
   let signedIn = true
