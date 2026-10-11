@@ -38,7 +38,7 @@ test('source export checks Taobao identity separately from the Eleme site identi
 
 const detailResponse = { templateVO: { global: { itemId: '777', shopId: '123', itemName: 'Eggs', subTitle: 'Box',
   mainImageUrl: 'https://img.alicdn.com/eggs.png', originPrice: 806, discountPrice: 699, showUnit: '盒', saleFlag: true, ifOutRange: false,
-  encryptionParams: { dynamicParamToK: 'must-not-leak' }, skuItemList: [{ skuId: '888', saleSpec: '400g/盒',
+  encryptionParams: { convert: false, dynamicParamToK: 'must-not-leak' }, skuItemList: [{ skuId: '888', saleSpec: '400g/盒',
     increment: 1, startWith: 1, stockQuantity: 3, saleUnit: '盒', chargeUnit: '盒' }] } } }
 
 test('Hema pagination retains platform tokens privately and rejects cross-query, cross-address and replayed products', async () => {
@@ -89,9 +89,21 @@ test('Hema detail validates item, native store, SKU identity and quantities befo
 
 const cartResponse = { global: { controlParas: { hema: '1' } }, hierarchy: { root: 'root', structure: { root: ['valid', 'invalid'] } }, data: {
   root: { tag: 'cartHemaGlobal', fields: {} }, valid: { tag: 'mainItem', fields: { cartId: '999', title: 'Eggs', quantity: '1',
-    isChecked: 'false', canCheck: true, pay: { afterPromPrice: 699, payUnit: '/盒' }, sku: { skuInvalid: false },
+    isChecked: 'false', canCheck: true, pay: { afterPromPrice: 699, nowTitle: '￥6.99', payUnit: '/盒' }, sku: { skuInvalid: false },
     outerUrl: 'must-not-leak', settlement: 'must-not-leak' } }, invalid: { tag: 'invalidMainItem', fields: { cartId: '998', title: 'Milk', quantity: '2',
-      isChecked: 'false', canCheck: false, pay: { afterPromPrice: 500, payUnit: '/瓶' }, sku: { skuInvalid: true }, codeMsg: 'Unavailable' } } } }
+      isChecked: 'false', canCheck: false, pay: { afterPromPrice: 1000, nowTitle: '￥5.00', payUnit: '/瓶' }, sku: { skuInvalid: true }, codeMsg: 'Unavailable' } } } }
+
+test('converted detail prices remain unknown and cart display prices are not replaced with line totals', () => {
+  const detail = structuredClone(detailResponse); detail.templateVO.global.encryptionParams.convert = true
+  let projected = hemaProductDetail(detail, { id: '777', nativeShopId: '123' })
+  assert.equal(projected.price, null); assert.equal(projected.originalPrice, null)
+  assert.equal(projected.variants.length, 1); assert(!JSON.stringify(projected).includes('dynamicParamToK'))
+  delete detail.templateVO.global.encryptionParams
+  assert.equal(hemaProductDetail(detail, { id: '777', nativeShopId: '123' }).price, null)
+  const cart = structuredClone(cartResponse); cart.data.invalid.fields.pay.afterPromPrice = 640; cart.data.invalid.fields.pay.nowTitle = '￥3.2'
+  assert.equal(hemaCart(cart).items[1].price, '3.20'); assert.equal(hemaCart(cart).items[1].quantity, '2')
+  cart.data.invalid.fields.pay.nowTitle = '￥unknown'; assert.throws(() => hemaCart(cart))
+})
 
 test('Hema passive image URLs use HTTPS while rejecting credentials, ports, tracking and foreign hosts', () => {
   for (const source of ['//img.alicdn.com/egg.jpg', 'http://img.alicdn.com/egg.jpg', 'https://img.alicdn.com/egg.jpg']) {

@@ -11,6 +11,7 @@ test('Hema view uses explicit Taobao sign-in, private account scope and remote p
   let linked = false
   let failNext = false
   let failCart = false, foreignCart = false
+  let unknownDetailPrice = false
   const productRef = '33333333-3333-4333-8333-333333333333', cursor = { platformId: 'hema', ref: '44444444-4444-4444-8444-444444444444' }
   const status = () => ({ authenticated: linked, state: linked ? 'logged-in' : 'logged-out', loginMethod: 'taobao-qr',
     viewAccountRef: linked ? ref : null, accounts: linked ? [{ ref, nickname: '示例盒马用户', externalId: profile.id, loginMethod: 'taobao-qr' }] : [],
@@ -34,7 +35,7 @@ test('Hema view uses explicit Taobao sign-in, private account scope and remote p
             description: '', imageUrl: null, price: '6.99', priceUnit: '盒', availability: 'available', options: [], tips: [] } ] }] : [] })
     }
     if (endpoint === 'productDetail') return ok({ platformId: 'hema', accountId: profile.id, addressRef, shopId: 'group-1', productRef,
-      product: { id: 'item-1', name: '示例鸡蛋', price: '7.99', originalPrice: '8.06', priceUnit: '盒', available: true,
+      product: { id: 'item-1', name: '示例鸡蛋', price: unknownDetailPrice ? null : '7.99', originalPrice: unknownDetailPrice ? null : '8.06', priceUnit: '盒', available: true,
         variants: [{ id: 'sku-1', name: '400g/盒', minimumQuantity: 1, quantityStep: 1, stockQuantity: 3, saleUnit: '盒', chargeUnit: '盒' }] } })
     if (endpoint === 'cart') return failCart ? { ok: false, error: { code: 'verification-required', message: '购物车读取需要验证' } } : ok({ platformId: 'hema',
       accountId: foreignCart ? '99999' : profile.id, addressRef, availableCount: 1, selectedCount: 0,
@@ -65,6 +66,9 @@ test('Hema view uses explicit Taobao sign-in, private account scope and remote p
     const specs = { price: root.findAllByProps({ className: 'waimai-price' }).map(value => text(value.props.children)),
       labels: ['返回商品', '商品规格', '400g/盒', '最低数量: 1 盒', '数量步长: 1 盒', '库存: 3', '计价单位: 盒'].filter(value => text(mounted.renderer.toJSON()).includes(value)) }
     assert.deepEqual(specs, JSON.parse(await readFile(new URL('./fixtures/hema-specifications.json', import.meta.url), 'utf8')))
+    await act(async () => click('返回商品'))
+    unknownDetailPrice = true; await act(async () => click('查看规格'))
+    assert(text(mounted.renderer.toJSON()).includes('价格暂无法确认')); assert(!text(mounted.renderer.toJSON()).includes('¥null'))
     await act(async () => click('返回商品'))
     failNext = true
     await act(async () => click('下一页商品'))
