@@ -7,6 +7,7 @@ import { HemaLogin, hemaStorage } from '../lib/hema-login.js'
 import { hemaJson, hemaOrders, hemaProfile, hemaAddresses, hemaProducts } from '../lib/hema-data.js'
 import { HemaService } from '../lib/hema-service.js'
 import { AccountPool } from '../lib/account-pool.js'
+import { WaimaiLogin } from '../lib/login.js'
 import { PlatformService } from '../lib/platform-service.js'
 
 const cookie = { name: 'synthetic-session', value: 'private-test-value', domain: '.taobao.com', path: '/', expires: -1, httpOnly: true, secure: true, sameSite: 'Lax' }
@@ -20,6 +21,20 @@ const order = { bizOrderId: '900719925474099312345', shopVO: { shopId: '123', sh
 const product = { serviceId: 'item-1', shopId: '123', serviceTitle: 'Eggs', subTitle: 'Box', mainImage: 'https://img.alicdn.com/eggs.png',
   price: '699', priceUnit: '盒', inventory: '3', shopClosed: '0', tracking: 'must-not-leak', cartAction: 'must-not-leak' }
 const search = { isSuccess: true, module: { dataList: [{ service: product }, { service: { serviceType: 10 } }], totalCount: 1, hasMorePage: '0' } }
+
+test('source export checks Taobao identity separately from the Eleme site identity and refuses a changing root session', async () => {
+  const login = new WaimaiLogin({ statePath: 'unused', persistLogin: false })
+  login.loginMethod = 'taobao-qr'; login.havanaId = '88888'; login.protocol = { taobaoIdentity: { api: 'root-identity' } }
+  login.requireAccount = async () => { login.accountId = '77777' }
+  login.http = { storageState: async () => structuredClone(storageState) }
+  let rootId = '12345', calls = 0, change = false
+  login.mtop = async spec => { assert.equal(spec.api, 'root-identity'); return { ret: ['SUCCESS::synthetic'], data: { userNumId: change && ++calls === 2 ? '99999' : rootId } } }
+  const exported = await login.exportTaobaoSession()
+  assert.equal(exported.accountId, '12345'); assert.equal(exported.businessAccountId, '77777'); assert.notEqual(exported.accountId, login.havanaId)
+  assert.deepEqual(exported.storageState, storageState)
+  change = true; await assert.rejects(login.exportTaobaoSession(), /身份已变化/)
+  login.loginMethod = 'sms'; await assert.rejects(login.exportTaobaoSession(), /扫码登录/)
+})
 
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), 'waimai-hema-')), calls = [], jars = []
