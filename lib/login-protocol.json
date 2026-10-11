@@ -28,16 +28,72 @@
     "version": "1.0",
     "appKey": "12574478",
     "jsv": "2.7.5",
-    "query": { "SV": "5.0", "ttid": "h5@Web_iphone_11.22.148" },
-    "headers": { "asac": "alscevn3ENzy5pDc77sV4k" },
-    "client": { "miniapp_plugin_version": "12.0.2", "buildNum": "2" }
+    "query": {
+      "SV": "5.0",
+      "ttid": "h5@Web_iphone_11.22.148"
+    },
+    "headers": {
+      "asac": "alscevn3ENzy5pDc77sV4k"
+    },
+    "client": {
+      "miniapp_plugin_version": "12.0.2",
+      "buildNum": "2"
+    }
   },
   "menu": {
     "url": "https://shopping.ele.me/h5/mtop.alsc.waimai.store.miniapp.store.detail.body.query.v2/1.0/",
     "api": "mtop.alsc.waimai.store.miniapp.store.detail.body.query.v2",
-    "method": "POST", "version": "1.0", "appKey": "12574478", "jsv": "2.7.2"
+    "method": "POST",
+    "version": "1.0",
+    "appKey": "12574478",
+    "jsv": "2.7.2"
   },
-  "allowedHosts": ["ipassport.ele.me", "h5.ele.me", "passport.ele.me", "waimai-guide.ele.me", "shopping.ele.me", "pass.eleme.hk", "tb.eleme.hk", "login.taobao.com", "login.m.taobao.com", "passport.taobao.com"],
+  "allowedHosts": [
+    "ipassport.ele.me",
+    "h5.ele.me",
+    "passport.ele.me",
+    "waimai-guide.ele.me",
+    "shopping.ele.me",
+    "pass.eleme.hk",
+    "tb.eleme.hk",
+    "login.taobao.com",
+    "login.m.taobao.com",
+    "passport.taobao.com",
+    "h5api.m.taobao.com"
+  ],
   "phoneCode": "86",
-  "countryCode": "CN"
+  "countryCode": "CN",
+  "ucc": {
+    "scene": "tb_eleme_h5_quick_auth",
+    "token": {
+      "url": "https://h5api.m.taobao.com/h5/mtop.alibaba.ucc.taobao.apply.usertoken/1.0/",
+      "api": "mtop.alibaba.ucc.taobao.apply.usertoken",
+      "version": "1.0",
+      "appKey": "12574478",
+      "jsv": "2.7.5",
+      "method": "POST",
+      "query": {
+        "ecode": "1"
+      },
+      "headers": {
+        "Origin": "https://www.taobao.com",
+        "Referer": "https://www.taobao.com/"
+      }
+    },
+    "login": {
+      "url": "https://h5api.m.taobao.com/h5/mtop.alibaba.ucc.oauthlogin/1.0/",
+      "api": "mtop.alibaba.ucc.oauthLogin",
+      "version": "1.0",
+      "appKey": "12574478",
+      "jsv": "2.7.5",
+      "method": "POST",
+      "query": {
+        "ecode": "1"
+      },
+      "headers": {
+        "Origin": "https://www.taobao.com",
+        "Referer": "https://www.taobao.com/"
+      }
+    }
+  }
 }

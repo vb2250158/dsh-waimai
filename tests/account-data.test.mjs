@@ -13,6 +13,7 @@ test('profile projection binds the account, masks phone and accepts only the pla
   assert.throws(() => profileData({ user_id: 99, username: 'other' }, '12345'), /mismatch/)
   for (const value of ['https://evil.example/image.png', 'javascript:alert(1)', '../avatar.png', '', null]) assert.equal(avatarUrl(value), null)
   assert.equal(profileData({ user_id: 12345, username: '', mobile: 'unexpected' }, '12345').maskedPhone, null)
+  assert.equal(profileData({ user_id: 12345, username: '淘宝用户', mobile: null, avatar: 'a'.repeat(32) + 'png' }, '12345').avatarUrl, user.avatarUrl)
 })
 
 test('order projection strips address, images, payment actions and extra cursor fields', () => {
