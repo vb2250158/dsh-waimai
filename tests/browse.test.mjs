@@ -61,10 +61,13 @@ test('explicit sponsored markers are filtered without changing pagination, inclu
     component.fields.items[0].fields.restaurant[key] = { isAd: flag }
     const result = shopPage(raw, 10, context)
     assert.deepEqual(result.shops, []); assert.equal(result.filteredAds, 1)
+    const shown = shopPage(raw, 10, context, false)
+    assert.equal(shown.shops.length, 1); assert.equal(shown.shops[0].isAd, true); assert.equal(shown.filteredAds, 0)
     assert.deepEqual(result.nextCursor, { ...context, offset: 10, rankId: 'synthetic-rank' })
     component.fields.items.push(structuredClone(shops.data.frontend_page_shop_list_recommend.fields.items[0]))
     component.fields.items[1].fields.restaurant.id = 'ordinary-shop'
     assert.deepEqual(shopPage(raw, 10, context).shops.map(shop => shop.id), ['ordinary-shop'])
+    assert.deepEqual(shopPage(raw, 10, context, false).shops.map(shop => shop.isAd), [true, false])
     assert.throws(() => shopPage(raw, 1, context))
     component.fields.items[0].fields.restaurant[key].isAd = 'unsupported'
     assert.throws(() => shopPage(raw, 10, context))

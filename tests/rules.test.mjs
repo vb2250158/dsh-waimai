@@ -165,6 +165,8 @@ test('childEnv carries the narrowed limits to the server', () => {
   assert.equal(env.MAX_ORDER_AMOUNT, '35')
   assert.equal(env.PAYMENT_MODE, 'auto')
   assert.equal(env.DEFAULT_PLATFORM, 'taobao')
+  assert.equal(env.HIDE_SPONSORED_SHOPS, 'true')
+  assert.equal(childEnv({ ...config, hideSponsoredShops: false }).HIDE_SPONSORED_SHOPS, 'false')
   assert.equal(env.HEADLESS, undefined)
   assert.deepEqual(JSON.parse(env.MERCHANT_WHITELIST), ['Global'])
 

@@ -24,7 +24,7 @@ DeepSeek Harness 多平台外卖插件。淘宝闪购通过 HTTP 完成淘宝扫
 
 接口字段来自 2026-10-11 的真实账号只读抓包与客户端代码。登录初始化读取 `/mini_login.htm` 中的 JSON，再调用 `/newlogin/sms/send.do` 与 `/newlogin/sms/login.do`，每次发送前获取新 CSRF。登录返回经过 HTTPS 域名限制的 Cookie 同步地址，再通过 `mtop.alsc.user.session.ele.check` 独立确认账号。账号资料、地址和订单每次读取均复核会话与账号。
 
-附近推荐通过 `mtop.alsc.eleme.miniapp.homepagev1` 与 `mtop.alsc.eleme.miniapp.collection.homepagev1` HTTP POST 按已选地址查询。仅将明确的 `isAd: true` 或 `isAd: "true"` 视为推广并过滤，`"false"` 和空广告信息不影响普通店铺；整页推广被过滤时保留下一页入口。分页位置按未过滤的原始页计算，与账号、地址绑定，不接受任意查询参数。菜单使用 `mtop.alsc.waimai.store.miniapp.store.detail.body.query.v2` HTTP POST；折叠菜品的原始商家 ID 必须由菜单中相同菜品的已确认商家引用核对，其他商家内容拒绝展示。只返回图片、菜品与选项等展示字段，不返回购买链接、购物车动作、历史重购记录或跟踪数据。菜单标价不代表实付金额。人工验证时停止；不会执行创建订单、取消订单、购买券包或扣款。
+附近推荐通过 `mtop.alsc.eleme.miniapp.homepagev1` 与 `mtop.alsc.eleme.miniapp.collection.homepagev1` HTTP POST 按已选地址查询。仅将明确的 `isAd: true` 或 `isAd: "true"` 视为推广，默认过滤；在「点单设置」关闭「隐藏推广店铺」并保存后，展示推广店铺和广告标签，`"false"` 和空广告信息不影响普通店铺；整页推广被过滤时保留下一页入口。分页位置按未过滤的原始页计算，与账号、地址绑定，不接受任意查询参数。菜单使用 `mtop.alsc.waimai.store.miniapp.store.detail.body.query.v2` HTTP POST；折叠菜品的原始商家 ID 必须由菜单中相同菜品的已确认商家引用核对，其他商家内容拒绝展示。只返回图片、菜品与选项等展示字段，不返回购买链接、购物车动作、历史重购记录或跟踪数据。菜单标价不代表实付金额。人工验证时停止；不会执行创建订单、取消订单、购买券包或扣款。
 
 淘宝二维码通过官方 `/havanaone/loginLegacy/qrCode/generate.do` 获取，并轮询 `/havanaone/loginLegacy/qrCode/query.do`。二维码在后端生成 PNG，临时令牌与 Cookie 不返回页面。每次扫码使用独立会话，取消、过期或切换页签会停止检查。淘宝确认后，通过 `mtop.alibaba.ucc.taobao.apply.usertoken` 与 `mtop.alibaba.ucc.oauthLogin` 换取闪购业务会话。仅接受 Eleme 站点的已确认会话，校验 Cookie 域名及账号 ID，再用业务接口复核本地 ID、Havana ID、资料与订单，全部通过后才保存。授权失败或额外验证时保留原账号；注册、绑定、换绑接口不会自动调用。
 
@@ -60,6 +60,7 @@ dsh plugin --profile web add --save-exact github:vb2250158/dsh-waimai#<40位提�
 | `qrLifetimeSeconds` | `180` | 单次扫码等待上限秒，整数 60–600；平台可提前使二维码失效 |
 | `qrPollSeconds` | `2` | 扫码检查间隔秒，整数 2–15 |
 | `browsePageSize` | `10` | 附近店铺每页数量，1–20 |
+| `hideSponsoredShops` | `true` | 隐藏推广店铺；可在「点单设置」关闭，保存后保留广告标签展示 |
 | `historyPageSize` | `10` | 每页订单条数，整数 1–20 |
 | `maxOrderAmount` | `35` | 单笔金额上限，元；任务只能收紧 |
 | `dailyBudget` | `0` | 全局每日上限，元；0 表示无限制 |

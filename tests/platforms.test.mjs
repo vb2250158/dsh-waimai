@@ -9,7 +9,7 @@ import { WaimaiLogin } from '../lib/login.js'
 
 const raw = { id: 17, user_id: 12345, address: '示例街道', address_detail: '示例房间', name: '示例联系人', phone: '13800000000',
   city_name: '示例城市', tag: '家', is_valid: 1, st_geohash: 'wx4g0ec1', geohash: null }
-async function fixture() {
+async function fixture(options = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'waimai-platform-'))
   const calls = []
   const login = { accountId: '12345', historyPageSize: 10, protocol: { orders: { client: {} }, menu: { api: 'captured-menu' } },
@@ -17,7 +17,7 @@ async function fixture() {
     get: async url => { calls.push(url); return { json: async () => login.raw } }, raw: [raw],
     mtop: async (spec, payload) => { calls.push({ spec, payload }); return login.reply },
     reply: { ret: ['SUCCESS::synthetic'], data: { result: { orderList: [ { eleMeStoreId: 'store-17', storeName: '示例店' }, { eleMeStoreId: 'store-17', storeName: '示例店' } ] } } } }
-  const service = new PlatformService({ login, directory })
+  const service = new PlatformService({ login, directory, ...options })
   return { directory, calls, login, service, close: () => rm(directory, { recursive: true, force: true }) }
 }
 
@@ -164,4 +164,23 @@ test('nearby reads require a fresh address, use its coordinates and reject curso
     await assert.rejects(f.service.recentShops('taobao'), error => error.code === 'address-required')
     assert.equal(f.calls.filter(value => value.spec).length, count)
   } finally { await f.close() }
+})
+
+test('nearby HTTP reads apply the configured advertising preference without changing their next offset', async () => {
+  for (const hideSponsoredShops of [true, false]) {
+    const f = await fixture({ hideSponsoredShops })
+    try {
+      const page = await f.service.addresses('taobao'), ref = page.addresses[0].ref
+      await f.service.selectAddress('taobao', page.accountId, ref)
+      f.login.protocol.nearby = { api: 'nearby-first' }
+      f.login.reply = { ret: ['SUCCESS::synthetic'], data: { data: { frontend_page_shop_list_recommend: { error: {},
+        customized: { hasNext: true, rankId: 'synthetic-rank' }, fields: { items: [{ bizCode: 'shop', fields: {
+          restaurant: { id: 'store-17', name: '推广店', adInfo: { isAd: 'true' } } } }] } } } } }
+      const result = await f.service.nearbyShops('taobao', undefined, ref)
+      assert.equal(result.shops.length, hideSponsoredShops ? 0 : 1)
+      assert.equal(result.filteredAds, hideSponsoredShops ? 1 : 0)
+      if (!hideSponsoredShops) assert.equal(result.shops[0].isAd, true)
+      assert.equal(result.nextCursor.offset, 10)
+    } finally { await f.close() }
+  }
 })

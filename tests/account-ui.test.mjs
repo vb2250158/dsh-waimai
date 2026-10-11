@@ -389,6 +389,23 @@ test('a failed same-account history refresh keeps the last verified page and pro
   } finally { mounted.close() }
 })
 
+test('advertising preference defaults to hidden and saves only the changed setting', async () => {
+  let operations
+  const mounted = await mount({ async call(_channel, endpoint) { return endpoint === 'profile' ? ok(profile) : ok({ authenticated: true, state: 'logged-in' }) } },
+    { mutate: async ops => { operations = ops; return true } })
+  try {
+    const root = mounted.renderer.root
+    await act(async () => root.findAllByType('button').find(button => text(button.props.children) === '点单设置').props.onClick())
+    const toggle = root.findAll(node => node.type === 'span' && node.props.label === '隐藏推广店铺')[0]
+    assert(toggle.props.checked)
+    assert.deepEqual({ label: toggle.props.label, checked: toggle.props.checked }, JSON.parse(await readFile(new URL('./fixtures/ads-setting.json', import.meta.url), 'utf8')))
+    act(() => toggle.props.onChange(false))
+    await act(async () => root.findByType('form').props.onSubmit({ preventDefault() {} }))
+    assert.deepEqual(structuredClone(operations), [{ op: 'set', path: ['hideSponsoredShops'], value: false }])
+    assert(text(mounted.renderer.toJSON()).includes('已保存'))
+  } finally { mounted.close() }
+})
+
 test('the task view shows only its platform and edits preserve tasks belonging to other platforms', async () => {
   let operations
   const config = { autoTasks: [{ id: 'other', name: '其他平台任务', platformId: 'jd' }, { id: 'current', name: '当前平台任务', platformId: 'taobao' }] }
