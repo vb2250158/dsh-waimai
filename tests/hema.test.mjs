@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { HemaLogin, hemaStorage } from '../lib/hema-login.js'
-import { hemaJson, hemaOrders, hemaProfile, hemaAddresses, hemaProducts } from '../lib/hema-data.js'
+import { hemaJson, hemaOrders, hemaProfile, hemaAddresses, hemaProducts, hemaProductDetail, hemaCart, HemaProductCursor } from '../lib/hema-data.js'
 import { HemaService } from '../lib/hema-service.js'
 import { AccountPool } from '../lib/account-pool.js'
 import { WaimaiLogin } from '../lib/login.js'
@@ -36,7 +36,90 @@ test('source export checks Taobao identity separately from the Eleme site identi
   login.loginMethod = 'sms'; await assert.rejects(login.exportTaobaoSession(), /扫码登录/)
 })
 
-async function fixture() {
+const detailResponse = { templateVO: { global: { itemId: '777', shopId: '123', itemName: 'Eggs', subTitle: 'Box',
+  mainImageUrl: 'https://img.alicdn.com/eggs.png', originPrice: 806, discountPrice: 699, showUnit: '盒', saleFlag: true, ifOutRange: false,
+  encryptionParams: { dynamicParamToK: 'must-not-leak' }, skuItemList: [{ skuId: '888', saleSpec: '400g/盒',
+    increment: 1, startWith: 1, stockQuantity: 3, saleUnit: '盒', chargeUnit: '盒' }] } } }
+
+test('Hema pagination retains platform tokens privately and rejects cross-query, cross-address and replayed products', async () => {
+  let duplicate = false
+  const f = await fixture({ catalog(payload) {
+    const position = JSON.parse(payload.pageParam).index, ext = JSON.parse(payload.extParam)
+    if (position) assert.equal(ext.exposeRn, 'synthetic-exposure')
+    return { isSuccess: true, module: { totalCount: 2, hasMorePage: position ? '0' : '1',
+      RN: 'synthetic-rank', first_rn: 'synthetic-first', exposeInfo: { exposeRn: 'synthetic-exposure' },
+      dataList: [{ service: { ...product, serviceId: position && !duplicate ? '778' : '777' } }] } }
+  }, detail: () => detailResponse })
+  try {
+    const profile = await f.login.profile(), addresses = await f.service.addresses('hema')
+    const ref = addresses.addresses[0].ref
+    await f.service.selectAddress('hema', profile.id, ref)
+    const first = await f.service.probeMenu('hema', 'group-1', ref, 'eggs')
+    assert(HemaProductCursor.safeParse(first.nextCursor).success)
+    assert(!JSON.stringify(first).includes('synthetic-exposure')); assert(!JSON.stringify(first).includes('nativeShopId'))
+    assert.equal(first.categories[0].items[0].productRef.length, 36)
+    const before = f.calls.filter(x => x.api === 'mtop.wdk.search.item').length
+    await assert.rejects(f.service.probeMenu('hema', 'group-1', ref, 'milk', first.nextCursor), /分页已失效/)
+    assert.equal(f.calls.filter(x => x.api === 'mtop.wdk.search.item').length, before)
+    const second = await f.service.probeMenu('hema', 'group-1', ref, 'eggs', first.nextCursor)
+    assert.equal(second.nextCursor, null); assert.equal(second.categories[0].items[0].id, '778')
+    assert.equal(JSON.parse(f.calls.findLast(x => x.api === 'mtop.wdk.search.item').payload.pageParam).index, 30)
+    duplicate = true
+    await assert.rejects(f.service.probeMenu('hema', 'group-1', ref, 'eggs', first.nextCursor), /重复或空/)
+    const detail = await f.service.productDetail('hema', first.categories[0].items[0].productRef, ref)
+    assert.equal(detail.product.price, '6.99'); assert.equal(detail.product.variants[0].name, '400g/盒')
+    assert(!JSON.stringify(detail).includes('must-not-leak'))
+    await assert.rejects(f.service.productDetail('hema', '11111111-1111-4111-8111-111111111111', ref), /选择已失效/)
+    f.change({ identity: '99999' })
+    await assert.rejects(f.service.probeMenu('hema', 'group-1', ref, 'eggs', first.nextCursor), /配送地址|分页已失效/)
+  } finally { await f.close() }
+})
+
+test('Hema detail validates item, native store, SKU identity and quantities before exposing specifications', () => {
+  assert.equal(hemaProductDetail(detailResponse, { id: '777', nativeShopId: '123' }).variants[0].stockQuantity, 3)
+  assert.throws(() => hemaProductDetail(detailResponse, { id: '778', nativeShopId: '123' }))
+  assert.throws(() => hemaProductDetail(detailResponse, { id: '777', nativeShopId: '456' }))
+  const invalid = structuredClone(detailResponse); invalid.templateVO.global.skuItemList[0].increment = 0
+  assert.throws(() => hemaProductDetail(invalid, { id: '777', nativeShopId: '123' }))
+  invalid.templateVO.global.skuItemList[0].increment = 1
+  invalid.templateVO.global.skuItemList.push(invalid.templateVO.global.skuItemList[0])
+  assert.throws(() => hemaProductDetail(invalid, { id: '777', nativeShopId: '123' }))
+  assert(!HemaProductCursor.safeParse({ platformId: 'taobao', ref: '11111111-1111-4111-8111-111111111111' }).success)
+})
+
+const cartResponse = { global: { controlParas: { hema: '1' } }, hierarchy: { root: 'root', structure: { root: ['valid', 'invalid'] } }, data: {
+  root: { tag: 'cartHemaGlobal', fields: {} }, valid: { tag: 'mainItem', fields: { cartId: '999', title: 'Eggs', quantity: '1',
+    isChecked: 'false', canCheck: true, pay: { afterPromPrice: 699, payUnit: '/盒' }, sku: { skuInvalid: false },
+    outerUrl: 'must-not-leak', settlement: 'must-not-leak' } }, invalid: { tag: 'invalidMainItem', fields: { cartId: '998', title: 'Milk', quantity: '2',
+      isChecked: 'false', canCheck: false, pay: { afterPromPrice: 500, payUnit: '/瓶' }, sku: { skuInvalid: true }, codeMsg: 'Unavailable' } } } }
+
+test('Hema cart reads current-address availability without editing items and refuses incomplete or foreign results', async () => {
+  const projected = hemaCart(cartResponse)
+  assert.equal(projected.items.length, 2); assert.equal(projected.availableCount, 1); assert.equal(projected.items[0].price, '6.99')
+  assert.equal(projected.items[1].reason, 'Unavailable'); assert(!JSON.stringify(projected).includes('must-not-leak'))
+  for (const corrupt of [value => { value.hierarchy.structure.root.pop() }, value => { value.data.invalid.fields.cartId = '999' },
+    value => { value.hierarchy.structure.valid = ['root'] }, value => { value.global.controlParas.hema = '0' },
+    value => { value.data.valid.fields.quantity = '0' }]) {
+    const copy = structuredClone(cartResponse); corrupt(copy); assert.throws(() => hemaCart(copy))
+  }
+  const f = await fixture({ cart: () => cartResponse })
+  try {
+    const profile = await f.login.profile(), addresses = await f.service.addresses('hema'), ref = addresses.addresses[0].ref
+    await f.service.selectAddress('hema', profile.id, ref)
+    const result = await f.service.cart('hema', ref)
+    assert.equal(result.addressRef, ref); assert.equal(result.orderingAvailable, false)
+    const call = f.calls.findLast(x => x.api === 'mtop.trade.query.bag')
+    assert.equal(call.payload.cartFrom, 'wdk_hema_client'); assert.equal(call.payload.isPage, false)
+    assert.equal(JSON.parse(call.payload.exParams).poi, address.geoCode)
+    assert.equal(JSON.parse(call.payload.exParams).locShopIds, '123,456')
+    await assert.rejects(f.service.cart('hema', 'b'.repeat(64)), /配送地址/)
+    assert.equal(f.calls.filter(x => x.api === 'mtop.trade.query.bag').length, 1)
+    f.change({ identity: '99999' }); await assert.rejects(f.service.cart('hema', ref), /配送地址/)
+    assert(!f.calls.some(x => /addBag|update.bag|confirm|create|pay/i.test(x.api)))
+  } finally { await f.close() }
+})
+
+async function fixture({ catalog, detail, cart } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'waimai-hema-')), calls = [], jars = []
   let identity = '12345', changedIdentity, self = true, ordersRejected = false, challenge = false
   const createContext = async options => {
@@ -53,7 +136,9 @@ async function fixture() {
             orderList: [{ ...order, bizOrderId: order.bizOrderId + payload.pageIndex }] } }
           if (ordersRejected) ret = ['FAIL_SYS_SESSION_EXPIRED::synthetic']
         } else if (api === 'mtop.wdk.lbs.location.UserAddressReadApi.getAllAddress') data = { addressList: [address] }
-        else if (api === 'mtop.wdk.search.item') data = search
+        else if (api === 'mtop.wdk.search.item') data = catalog ? catalog(payload) : search
+        else if (api === 'mtop.wdk.detail.openservice' && detail) data = detail(payload)
+        else if (api === 'mtop.trade.query.bag' && cart) data = cart(payload)
         else throw new Error('unexpected endpoint')
         if (challenge) ret = ['FAIL_SYS_USER_VALIDATE::private-url']
         return { ok: () => true, text: async () => JSON.stringify({ ret, data }) }

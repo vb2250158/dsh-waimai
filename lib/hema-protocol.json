@@ -34,6 +34,14 @@
     "appKey": "12574478",
     "jsv": "2.7.2"
   },
+  "productDetail": {
+    "url": "https://h5api.m.taobao.com/h5/mtop.wdk.detail.openservice/3.0/",
+    "api": "mtop.wdk.detail.openservice", "version": "3.0", "appKey": "12574478", "jsv": "2.7.2"
+  },
+  "cart": {
+    "url": "https://h5api.m.taobao.com/h5/mtop.trade.query.bag/5.0/",
+    "api": "mtop.trade.query.bag", "version": "5.0", "appKey": "12574478", "jsv": "2.7.2"
+  },
   "products": {
     "url": "https://h5api.m.taobao.com/h5/mtop.wdk.search.item/2.0/",
     "api": "mtop.wdk.search.item",

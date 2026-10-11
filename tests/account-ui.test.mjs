@@ -9,6 +9,9 @@ import { Config } from '../lib/index.js'
 test('Hema view uses explicit Taobao sign-in, private account scope and remote product search without purchasing controls', async () => {
   const calls = [], ref = '11111111-1111-4111-8111-111111111111', source = '22222222-2222-4222-8222-222222222222', addressRef = 'a'.repeat(64)
   let linked = false
+  let failNext = false
+  let failCart = false, foreignCart = false
+  const productRef = '33333333-3333-4333-8333-333333333333', cursor = { platformId: 'hema', ref: '44444444-4444-4444-8444-444444444444' }
   const status = () => ({ authenticated: linked, state: linked ? 'logged-in' : 'logged-out', loginMethod: 'taobao-qr',
     viewAccountRef: linked ? ref : null, accounts: linked ? [{ ref, nickname: '示例盒马用户', externalId: profile.id, loginMethod: 'taobao-qr' }] : [],
     taobaoAccounts: [{ ref: source, nickname: '示例淘宝用户' }] })
@@ -21,9 +24,21 @@ test('Hema view uses explicit Taobao sign-in, private account scope and remote p
       addresses: [{ ref: addressRef, address: '示例配送地址', contact: '', maskedPhone: '', usable: true }] })
     if (endpoint === 'nearbyShops') return ok({ platformId: 'hema', accountId: profile.id, addressRef, scope: 'delivery-stores', nextCursor: null,
       shops: [{ id: 'group-1', name: '示例盒马门店' }] })
-    if (endpoint === 'probeMenu') return ok({ platformId: 'hema', accountId: profile.id, addressRef, shopId: 'group-1',
-      queryRequired: !payload.keyword, categories: payload.keyword ? [{ id: 'results', name: payload.keyword, items: [
-        { id: 'item-1', name: '示例鸡蛋', description: '', imageUrl: null, price: '6.99', priceUnit: '盒', availability: 'available', options: [], tips: [] } ] }] : [] })
+    if (endpoint === 'probeMenu') {
+      if (payload.cursor && failNext) return { ok: false, error: { code: 'search-failed', message: '商品分页读取失败' } }
+      if (payload.cursor) assert.deepEqual(payload.cursor, cursor)
+      return ok({ platformId: 'hema', accountId: profile.id, addressRef, shopId: 'group-1', query: payload.keyword,
+        nextCursor: payload.keyword && !payload.cursor ? cursor : null,
+        queryRequired: !payload.keyword, categories: payload.keyword ? [{ id: 'results', name: payload.keyword, items: [
+          { id: payload.cursor ? 'item-2' : 'item-1', productRef, name: payload.cursor ? '示例下一页鸡蛋' : '示例鸡蛋',
+            description: '', imageUrl: null, price: '6.99', priceUnit: '盒', availability: 'available', options: [], tips: [] } ] }] : [] })
+    }
+    if (endpoint === 'productDetail') return ok({ platformId: 'hema', accountId: profile.id, addressRef, shopId: 'group-1', productRef,
+      product: { id: 'item-1', name: '示例鸡蛋', price: '7.99', originalPrice: '8.06', priceUnit: '盒', available: true,
+        variants: [{ id: 'sku-1', name: '400g/盒', minimumQuantity: 1, quantityStep: 1, stockQuantity: 3, saleUnit: '盒', chargeUnit: '盒' }] } })
+    if (endpoint === 'cart') return failCart ? { ok: false, error: { code: 'verification-required', message: '购物车读取需要验证' } } : ok({ platformId: 'hema',
+      accountId: foreignCart ? '99999' : profile.id, addressRef, availableCount: 1, selectedCount: 0,
+      items: [{ id: 'synthetic-cart', name: '示例购物车鸡蛋', quantity: '1', quantityUnit: '盒', specification: '', price: '6.99', priceUnit: '/盒', available: true, selected: false }] })
     throw Error('unexpected request')
   } }, { addresses: async () => ok({ platformId: 'hema', accountId: profile.id, selectedRef: addressRef,
     addresses: [{ ref: addressRef, address: '示例配送地址', contact: '', maskedPhone: '', usable: true }] }) })
@@ -46,7 +61,30 @@ test('Hema view uses explicit Taobao sign-in, private account scope and remote p
       search: calls.find(call => call.endpoint === 'probeMenu' && call.payload.keyword)?.payload.keyword, price,
       ordering: '可查询商品，下单与支付暂未开放。' }
     assert.deepEqual(view, JSON.parse(await readFile(new URL('./fixtures/hema-view.json', import.meta.url), 'utf8')))
-    assert(calls.filter(call => ['profile', 'addresses', 'nearbyShops', 'probeMenu'].includes(call.endpoint)).every(call => call.payload.accountRef === ref && call.payload.platformId === 'hema'))
+    await act(async () => click('查看规格'))
+    const specs = { price: root.findAllByProps({ className: 'waimai-price' }).map(value => text(value.props.children)),
+      labels: ['返回商品', '商品规格', '400g/盒', '最低数量: 1 盒', '数量步长: 1 盒', '库存: 3', '计价单位: 盒'].filter(value => text(mounted.renderer.toJSON()).includes(value)) }
+    assert.deepEqual(specs, JSON.parse(await readFile(new URL('./fixtures/hema-specifications.json', import.meta.url), 'utf8')))
+    await act(async () => click('返回商品'))
+    failNext = true
+    await act(async () => click('下一页商品'))
+    assert(text(mounted.renderer.toJSON()).includes('示例鸡蛋')); assert(text(mounted.renderer.toJSON()).includes('商品分页读取失败'))
+    failNext = false
+    await act(async () => click('下一页商品'))
+    assert(text(mounted.renderer.toJSON()).includes('示例下一页鸡蛋'))
+    assert(!root.findAllByProps({ className: 'waimai-food-card' }).some(value => text(value.props.children).includes('示例鸡蛋')))
+    assert.equal(root.findAllByType('button').find(button => text(button.props.children) === '下一页商品').props.disabled, true)
+    await act(async () => click('返回首批'))
+    assert(text(mounted.renderer.toJSON()).includes('示例鸡蛋'))
+    await act(async () => click('查看购物车'))
+    const cartView = text(mounted.renderer.toJSON())
+    assert.deepEqual({ labels: ['购物车', '刷新购物车', '商品条目: 1', '可售商品: 1', '示例购物车鸡蛋', '数量: 1 盒', '标价 ¥6.99 /盒'].filter(value => cartView.includes(value)) },
+      JSON.parse(await readFile(new URL('./fixtures/hema-cart.json', import.meta.url), 'utf8')))
+    failCart = true; await act(async () => click('刷新购物车'))
+    assert(text(mounted.renderer.toJSON()).includes('示例购物车鸡蛋')); assert(text(mounted.renderer.toJSON()).includes('购物车读取需要验证'))
+    failCart = false; foreignCart = true; await act(async () => click('刷新购物车'))
+    assert(!text(mounted.renderer.toJSON()).includes('示例购物车鸡蛋'))
+    assert(calls.filter(call => ['profile', 'addresses', 'nearbyShops', 'probeMenu', 'productDetail', 'cart'].includes(call.endpoint)).every(call => call.payload.accountRef === ref && call.payload.platformId === 'hema'))
     assert(!calls.some(call => /create|pay|bind/i.test(call.endpoint)))
     assert(!text(mounted.renderer.toJSON()).includes('示例淘宝用户'))
   } finally { mounted.close() }
