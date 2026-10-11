@@ -1,0 +1,44 @@
+{
+  "origin": "https://login.taobao.com",
+  "allowedHosts": [
+    "login.taobao.com",
+    "login.m.taobao.com",
+    "passport.taobao.com",
+    "h5api.m.taobao.com"
+  ],
+  "session": {
+    "url": "https://h5api.m.taobao.com/h5/mtop.user.getusersimple/1.0/",
+    "api": "mtop.user.getUserSimple",
+    "version": "1.0",
+    "appKey": "12574478",
+    "jsv": "2.7.2"
+  },
+  "profile": {
+    "url": "https://h5api.m.taobao.com/h5/mtop.wdk.iseeku.user.profile.get/2.1/",
+    "api": "mtop.wdk.iseeku.user.profile.get",
+    "version": "2.1",
+    "appKey": "12574478",
+    "jsv": "2.7.2"
+  },
+  "orders": {
+    "url": "https://h5api.m.taobao.com/h5/mtop.hema.trade.order.buyer.list.search/1.1/",
+    "api": "mtop.hema.trade.order.buyer.list.search",
+    "version": "1.1",
+    "appKey": "12574478",
+    "jsv": "2.7.2"
+  },
+  "addresses": {
+    "url": "https://h5api.m.taobao.com/h5/mtop.wdk.lbs.location.useraddressreadapi.getalladdress/1.0/",
+    "api": "mtop.wdk.lbs.location.UserAddressReadApi.getAllAddress",
+    "version": "1.0",
+    "appKey": "12574478",
+    "jsv": "2.7.2"
+  },
+  "products": {
+    "url": "https://h5api.m.taobao.com/h5/mtop.wdk.search.item/2.0/",
+    "api": "mtop.wdk.search.item",
+    "version": "2.0",
+    "appKey": "12574478",
+    "jsv": "2.7.2"
+  }
+}

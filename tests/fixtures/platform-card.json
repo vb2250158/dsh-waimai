@@ -1,6 +1,7 @@
 {
   "platforms": [
     { "id": "taobao", "label": "淘宝闪购" },
+    { "id": "hema", "label": "盒马" },
     { "id": "meituan", "label": "美团外卖" },
     { "id": "jd", "label": "京东外卖" }
   ],

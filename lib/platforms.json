@@ -22,6 +22,28 @@
     "reason": "ordering-unverified"
   },
   {
+    "id": "hema",
+    "names": {
+      "zh": "盒马",
+      "en": "Hema"
+    },
+    "adapter": "hema",
+    "capabilities": {
+      "login": true,
+      "profile": true,
+      "addresses": true,
+      "orders": true,
+      "nearbyShops": true,
+      "menu": true,
+      "menuProbe": true,
+      "checkout": false,
+      "createOrder": false,
+      "payment": false,
+      "coupons": false
+    },
+    "reason": "ordering-unverified"
+  },
+  {
     "id": "meituan",
     "names": {
       "zh": "美团外卖",

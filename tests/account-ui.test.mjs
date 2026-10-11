@@ -6,6 +6,52 @@ import React from 'react'
 import { create, act } from 'react-test-renderer'
 import { Config } from '../lib/index.js'
 
+test('Hema view uses explicit Taobao sign-in, private account scope and remote product search without purchasing controls', async () => {
+  const calls = [], ref = '11111111-1111-4111-8111-111111111111', source = '22222222-2222-4222-8222-222222222222', addressRef = 'a'.repeat(64)
+  let linked = false
+  const status = () => ({ authenticated: linked, state: linked ? 'logged-in' : 'logged-out', loginMethod: 'taobao-qr',
+    viewAccountRef: linked ? ref : null, accounts: linked ? [{ ref, nickname: '示例盒马用户', externalId: profile.id, loginMethod: 'taobao-qr' }] : [],
+    taobaoAccounts: [{ ref: source, nickname: '示例淘宝用户' }] })
+  const mounted = await mount({ async call(_channel, endpoint, payload) {
+    calls.push({ endpoint, payload })
+    if (endpoint === 'status') return ok(payload.platformId === 'hema' ? status() : { state: 'logged-out', authenticated: false })
+    if (endpoint === 'useTaobao') { assert.equal(payload.platformId, 'hema'); assert.equal(payload.sourceAccountRef, source); linked = true; return ok(status()) }
+    if (endpoint === 'profile') return ok({ ...profile, nickname: '示例盒马用户' })
+    if (endpoint === 'addresses') return ok({ platformId: 'hema', accountId: profile.id, selectedRef: addressRef,
+      addresses: [{ ref: addressRef, address: '示例配送地址', contact: '', maskedPhone: '', usable: true }] })
+    if (endpoint === 'nearbyShops') return ok({ platformId: 'hema', accountId: profile.id, addressRef, scope: 'delivery-stores', nextCursor: null,
+      shops: [{ id: 'group-1', name: '示例盒马门店' }] })
+    if (endpoint === 'probeMenu') return ok({ platformId: 'hema', accountId: profile.id, addressRef, shopId: 'group-1',
+      queryRequired: !payload.keyword, categories: payload.keyword ? [{ id: 'results', name: payload.keyword, items: [
+        { id: 'item-1', name: '示例鸡蛋', description: '', imageUrl: null, price: '6.99', priceUnit: '盒', availability: 'available', options: [], tips: [] } ] }] : [] })
+    throw Error('unexpected request')
+  } }, { addresses: async () => ok({ platformId: 'hema', accountId: profile.id, selectedRef: addressRef,
+    addresses: [{ ref: addressRef, address: '示例配送地址', contact: '', maskedPhone: '', usable: true }] }) })
+  try {
+    const root = mounted.renderer.root
+    const click = label => root.findAllByType('button').find(button => text(button.props.children) === label).props.onClick()
+    await act(async () => root.findAll(node => node.type === 'span' && node.props.className === 'waimai-choice')[0].props.onSelect('hema'))
+    assert(!root.findAllByType('button').some(button => text(button.props.children) === '手机号短信'))
+    const loginMethods = ['淘宝扫码', '使用已登录淘宝账号'].filter(label => root.findAllByType('button').some(button => text(button.props.children) === label))
+    await act(async () => click('使用已登录淘宝账号'))
+    assert(text(mounted.renderer.toJSON()).includes('示例盒马用户'))
+    await act(async () => click('门店与商品'))
+    const stores = root.findAllByProps({ className: 'waimai-food-card' }).map(node => text(node.findByType('strong').props.children))
+    await act(async () => click('查询商品'))
+    assert(!calls.some(call => call.endpoint === 'probeMenu' && call.payload.keyword))
+    await act(async () => root.findAllByProps({ 'aria-label': '输入商品名称' })[0].props.onChange({ target: { value: '鸡蛋' } }))
+    await act(async () => click('搜索商品'))
+    const price = text(root.findByProps({ className: 'waimai-price' }).props.children)
+    const view = { platform: '盒马', tabs: root.findByType('nav').findAllByType('button').map(button => text(button.props.children)), loginMethods, stores,
+      search: calls.find(call => call.endpoint === 'probeMenu' && call.payload.keyword)?.payload.keyword, price,
+      ordering: '可查询商品，下单与支付暂未开放。' }
+    assert.deepEqual(view, JSON.parse(await readFile(new URL('./fixtures/hema-view.json', import.meta.url), 'utf8')))
+    assert(calls.filter(call => ['profile', 'addresses', 'nearbyShops', 'probeMenu'].includes(call.endpoint)).every(call => call.payload.accountRef === ref && call.payload.platformId === 'hema'))
+    assert(!calls.some(call => /create|pay|bind/i.test(call.endpoint)))
+    assert(!text(mounted.renderer.toJSON()).includes('示例淘宝用户'))
+  } finally { mounted.close() }
+})
+
 const profile = { id: '12345', nickname: '示例用户', maskedPhone: '138****0000', avatarUrl: 'https://cube.elemecdn.com/a/aa/' + 'a'.repeat(29) + 'png.png' }
 const order = { id: 'synthetic-order', merchantName: '示例店', createdAt: 1700000000000, amount: '25.50', status: '已完成', items: [{ name: '示例饭', count: 2 }] }
 const ok = value => ({ ok: true, value })

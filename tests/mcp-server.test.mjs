@@ -39,6 +39,7 @@ const EXPECTED_TOOLS = [
   'account_begin',
   'account_cancel',
   'account_view',
+  'account_use_taobao',
   'list_platforms',
   'list_connections',
   'get_status',
