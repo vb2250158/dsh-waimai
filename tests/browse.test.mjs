@@ -44,3 +44,29 @@ test('image URLs reject action endpoints, private hosts, credentials and queries
   for (const url of ['http://img.alicdn.com/a.png', 'https://user@img.alicdn.com/a.png', 'https://h5.ele.me/a.png', 'https://img.alicdn.com/a.png?token=secret']) assert.equal(browseImage(url), null)
   assert.equal(browseImage('https://img.alicdn.com/a.png'), 'https://img.alicdn.com/a.png')
 })
+
+test('ordinary ad metadata and explicit false markers never classify shops as sponsored', () => {
+  for (const fields of [{ adInfo: {} }, { adInfo: { isAd: 'false', productType: 'ordinary' } },
+    { recommend: { isAd: false }, adShopExt: { isAd: 'false' } }, { adInfo: null, adShopExt: {} }]) {
+    const raw = structuredClone(shops)
+    Object.assign(raw.data.frontend_page_shop_list_recommend.fields.items[0].fields.restaurant, fields)
+    const result = shopPage(raw, 10, context)
+    assert.equal(result.shops.length, 1); assert.equal(result.shops[0].isAd, false); assert.equal(result.filteredAds, 0)
+  }
+})
+
+test('explicit sponsored markers are filtered without changing pagination, including all-ad pages', () => {
+  for (const key of ['recommend', 'adInfo', 'adShopExt']) for (const flag of [true, 'true']) {
+    const raw = structuredClone(shops), component = raw.data.frontend_page_shop_list_recommend
+    component.fields.items[0].fields.restaurant[key] = { isAd: flag }
+    const result = shopPage(raw, 10, context)
+    assert.deepEqual(result.shops, []); assert.equal(result.filteredAds, 1)
+    assert.deepEqual(result.nextCursor, { ...context, offset: 10, rankId: 'synthetic-rank' })
+    component.fields.items.push(structuredClone(shops.data.frontend_page_shop_list_recommend.fields.items[0]))
+    component.fields.items[1].fields.restaurant.id = 'ordinary-shop'
+    assert.deepEqual(shopPage(raw, 10, context).shops.map(shop => shop.id), ['ordinary-shop'])
+    assert.throws(() => shopPage(raw, 1, context))
+    component.fields.items[0].fields.restaurant[key].isAd = 'unsupported'
+    assert.throws(() => shopPage(raw, 10, context))
+  }
+})

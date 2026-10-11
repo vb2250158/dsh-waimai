@@ -269,6 +269,33 @@ test('ordering requires an address, edits it in place and discards late menus wh
   } finally { mounted.close() }
 })
 
+test('an all-sponsored page explains filtering and keeps the next page usable', async () => {
+  const addressRef = 'a'.repeat(64), cursors = [], cursor = { offset: 10, rankId: 'synthetic', addressRef, accountId: profile.id }
+  const mounted = await mount({ async call(_channel, endpoint, payload) {
+    if (endpoint === 'status') return ok({ authenticated: true, state: 'logged-in' })
+    if (endpoint === 'profile') return ok(profile)
+    if (endpoint === 'nearbyShops') {
+      cursors.push(payload.cursor)
+      return ok({ accountId: profile.id, addressRef, shops: payload.cursor ? [{ id: 'store-17', name: '普通店铺', isAd: false }] : [],
+        filteredAds: payload.cursor ? 0 : 10, nextCursor: payload.cursor ? null : cursor })
+    }
+    throw Error('Unexpected request')
+  } }, { addresses: async () => ok({ accountId: profile.id, selectedRef: addressRef,
+    addresses: [{ ref: addressRef, address: '示例地址', contact: '联系人', maskedPhone: '', usable: true }] }) })
+  try {
+    const root = mounted.renderer.root, click = label => root.findAllByType('button').find(button => text(button.props.children) === label).props.onClick()
+    await act(async () => click('点餐'))
+    const empty = root.find(node => node.props.className === 'waimai-empty')
+    const output = { empty: text(empty), nextPage: root.findAllByType('button').filter(button => text(button.props.children) === '下一页店铺').length }
+    assert.deepEqual(output, JSON.parse(await readFile(new URL('./fixtures/ads-view.json', import.meta.url), 'utf8')))
+    assert(!text(mounted.renderer.toJSON()).includes('该地址暂未返回附近店铺'))
+    await act(async () => click('下一页店铺'))
+    assert.deepEqual(cursors[1], cursor); assert(text(mounted.renderer.toJSON()).includes('普通店铺'))
+    assert(!text(mounted.renderer.toJSON()).includes('本页店铺均为推广'))
+    assert.equal(root.findAllByType('tag').filter(node => text(node) === '广告').length, 0)
+  } finally { mounted.close() }
+})
+
 test('menu view renders real categories, listed prices and options, filters dishes and retains data after refresh failure', async () => {
   const addressRef = 'a'.repeat(64)
   const { menuData } = await import('../lib/browse-data.js')
