@@ -60,7 +60,7 @@ dsh plugin --profile web add --save-exact github:vb2250158/dsh-waimai#<40位提�
 | `qrLifetimeSeconds` | `180` | 单次扫码等待上限秒，整数 60–600；平台可提前使二维码失效 |
 | `qrPollSeconds` | `2` | 扫码检查间隔秒，整数 2–15 |
 | `browsePageSize` | `10` | 附近店铺每页数量，1–20 |
-| `hideSponsoredShops` | `true` | 隐藏推广店铺；可在「点单设置」关闭，保存后保留广告标签展示 |
+| `hideSponsoredShops` | `true` | 隐藏推广店铺；可在「点单设置」关闭，保存后保留广告标签展示，查询会等候接口重连完成 |
 | `historyPageSize` | `10` | 每页订单条数，整数 1–20 |
 | `maxOrderAmount` | `35` | 单笔金额上限，元；任务只能收紧 |
 | `dailyBudget` | `0` | 全局每日上限，元；0 表示无限制 |
