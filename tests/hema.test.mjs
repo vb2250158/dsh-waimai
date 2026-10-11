@@ -93,6 +93,20 @@ const cartResponse = { global: { controlParas: { hema: '1' } }, hierarchy: { roo
     outerUrl: 'must-not-leak', settlement: 'must-not-leak' } }, invalid: { tag: 'invalidMainItem', fields: { cartId: '998', title: 'Milk', quantity: '2',
       isChecked: 'false', canCheck: false, pay: { afterPromPrice: 500, payUnit: '/瓶' }, sku: { skuInvalid: true }, codeMsg: 'Unavailable' } } } }
 
+test('Hema passive image URLs use HTTPS while rejecting credentials, ports, tracking and foreign hosts', () => {
+  for (const source of ['//img.alicdn.com/egg.jpg', 'http://img.alicdn.com/egg.jpg', 'https://img.alicdn.com/egg.jpg']) {
+    assert.equal(hemaProfile({ ...profile, avatar: source }, '12345').avatarUrl, 'https://img.alicdn.com/egg.jpg')
+    assert.equal(hemaProducts({ ...search, module: { ...search.module, dataList: [{ service: { ...product, mainImage: source } }] } }, new Set(['123'])).items[0].imageUrl, 'https://img.alicdn.com/egg.jpg')
+    const detail = structuredClone(detailResponse); detail.templateVO.global.mainImageUrl = source
+    assert.equal(hemaProductDetail(detail, { id: '777', nativeShopId: '123' }).imageUrl, 'https://img.alicdn.com/egg.jpg')
+    const cart = structuredClone(cartResponse); cart.data.valid.fields.pic = source
+    assert.equal(hemaCart(cart).items[0].imageUrl, 'https://img.alicdn.com/egg.jpg')
+  }
+  for (const source of ['//img.alicdn.com@127.0.0.1/egg.jpg', 'http://img.alicdn.com:8080/egg.jpg', '//img.alicdn.com/egg.jpg?token=private', '//other.example/egg.jpg', 'javascript:alert(1)', 'http://img.alicdn.com.evil.example/egg.jpg']) {
+    assert.equal(hemaProfile({ ...profile, avatar: source }, '12345').avatarUrl, null)
+  }
+})
+
 test('Hema cart reads current-address availability without editing items and refuses incomplete or foreign results', async () => {
   const projected = hemaCart(cartResponse)
   assert.equal(projected.items.length, 2); assert.equal(projected.availableCount, 1); assert.equal(projected.items[0].price, '6.99')
