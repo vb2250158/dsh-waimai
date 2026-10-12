@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.19 — 2026-10-12
+
+- 插件列表名称与描述支持中文、英文，随 DSH 语言设置切换。
+- Plugin list names and descriptions follow the DSH Chinese or English language setting.
+
 ## 0.2.18
 
 - 打开扫码入口自动生成二维码，手机确认后自动复核闪购或盒马授权；取消手动检查按钮，显示扫码、手机确认、完成登录三步进度，隐藏扫码期间误导性的「尚未检查登录状态」。
