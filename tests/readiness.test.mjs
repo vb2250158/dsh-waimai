@@ -77,7 +77,7 @@ test('a preview tick persists its claim before notification and does not run twi
   const ctx = {
     inject() {},
     on() {},
-    logger: { warn() {}, info(message) { if (message.includes('未下单')) previews++ } },
+    logger: { exporter() { return () => {} }, warn() {}, info(message) { if (message.includes('未下单')) previews++ } },
     effect(create) { disposers.push(create()) },
     tools: { register() { return () => {} } },
     skills: { registerProvider() { return () => {} } },

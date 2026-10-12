@@ -76,7 +76,7 @@ test('confirmed Taobao login cannot replace the old account without independent 
   const f = await fixture({ status: 'CONFIRMED' })
   try {
     const start = await f.login.qrStart(), result = await f.login.qrPoll(start.qr.attemptId)
-    assert.equal(result.qr.state, 'business-unconfirmed'); assert.equal(f.login.http, f.old)
+    assert.equal(result.qr.state, 'taobao-session-unconfirmed'); assert.equal(f.login.http, f.old)
     const failed = f.events.find(event => event.stage === 'mtop.alibaba.ucc.taobao.apply.usertoken')
     assert.deepEqual(failed.ret, ['FAIL_SYS_SESSION_EXPIRED'])
     assert.equal(failed.attemptId, start.qr.attemptId)
@@ -126,7 +126,7 @@ test('UCC challenges and mismatched business identity cannot replace the previou
     const f = await fixture({ status: 'CONFIRMED', ucc: true, ...options })
     try {
       const start = await f.login.qrStart()
-      if (options.oauth) assert.equal((await f.login.qrPoll(start.qr.attemptId)).qr.state, 'business-unconfirmed')
+      if (options.oauth) assert.equal((await f.login.qrPoll(start.qr.attemptId)).qr.state, 'verification-required')
       else await assert.rejects(f.login.qrPoll(start.qr.attemptId))
       assert.equal(f.login.http, f.old); assert.deepEqual(JSON.parse(await readFile(f.path, 'utf8')), f.original)
       await assert.rejects(readFile(f.path + '.previous.json'), { code: 'ENOENT' })
@@ -156,6 +156,21 @@ test('stale, canceled and expired attempts do not send another poll or change ac
     const third = await f.login.qrStart(); f.login.qr.expiresAt = Date.now() - 1; f.login.nextQrPollAt = 0
     assert.equal((await f.login.qrPoll(third.qr.attemptId)).qr.state, 'expired')
     assert(!f.calls.some(value => value.url.includes('/query.do'))); assert.equal(f.login.http, f.old)
+  } finally { await f.close() }
+})
+
+test('confirmed scans receive a separate bounded authorization deadline and stop automatically when it expires', async () => {
+  const f = await fixture({ status: 'CONFIRMED', ucc: true, oauth: { ret: ['SUCCESS::synthetic'], data: { actionType: 'OTHER', code: 99 } } })
+  try {
+    const start = await f.login.qrStart()
+    f.login.qr.expiresAt = Date.now() + 1000
+    const result = await f.login.qrPoll(start.qr.attemptId)
+    assert.equal(result.qr.state, 'business-unconfirmed')
+    assert(result.qr.authorizationExpiresAt > Date.now() + 50000)
+    f.login.qr.authorizationExpiresAt = Date.now() - 1; f.login.nextQrPollAt = 0
+    assert.equal((await f.login.qrPoll(start.qr.attemptId)).qr.state, 'authorization-timeout')
+    assert.equal(f.login.qr.http, undefined)
+    assert.deepEqual(JSON.parse(await readFile(f.path, 'utf8')), f.original)
   } finally { await f.close() }
 })
 

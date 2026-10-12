@@ -41,7 +41,9 @@ DeepSeek Harness 多平台外卖插件。淘宝闪购和盒马通过 HTTP 读取
 
 淘宝二维码通过官方 `/havanaone/loginLegacy/qrCode/generate.do` 获取，并轮询 `/havanaone/loginLegacy/qrCode/query.do`。二维码在后端生成 PNG，临时令牌与 Cookie 不返回页面。每次扫码使用独立会话，取消、过期或切换页签会停止检查。淘宝确认后，通过 `mtop.alibaba.ucc.taobao.apply.usertoken` 与 `mtop.alibaba.ucc.oauthLogin` 换取闪购业务会话。仅接受 Eleme 站点的已确认会话，校验 Cookie 域名及账号 ID，再用业务接口复核本地 ID、Havana ID、资料与订单，全部通过后才保存。授权失败或额外验证时保留原账号；注册、绑定、换绑接口不会自动调用。
 
-扫码卡在授权阶段时，在插件页面重新获取二维码并确认登录。`loginDiagnostics` 默认开启，现有 Host 日志中的 `[waimai-login]` 按 `attemptId` 记录二维码确认、业务初始化、令牌与 UCC 接口返回码及授权类型、资料和订单核验、失败和取消。日志仅保留固定字段、类型与数量，不记录远端说明、URL、二维码内容、Token、Cookie 或个人资料；重复等待状态不重复记录。关闭该配置停止记录，登录行为保持原样。
+打开插件页面的扫码入口后自动生成二维码。页面显示扫码、手机确认、完成登录三步进度；手机确认后自动复核业务授权，无需点击检查按钮。临时请求失败会自动重试，确认后的复核默认最多 60 秒；超时、淘宝会话未建立或平台要求额外验证时停止并显示原因，可重新扫码。取消或离开账号页会停止当前尝试。
+
+`loginDiagnostics` 默认开启，启动器的 `web-host.stderr.log` 中按 `[waimai-login]` 和 `attemptId` 记录二维码确认、业务初始化、令牌与 UCC 接口返回码及授权类型、资料和订单核验、失败和取消。日志仅保留固定字段、类型与数量，不记录远端说明、URL、二维码内容、Token、Cookie 或个人资料；重复等待状态不重复记录。关闭该配置停止记录，登录行为保持原样。
 
 手机号登录的订单可能与淘宝账号所关联的闪购账号不同，仅改变订单查询渠道不能证明账号一致。真实验收已取得淘宝扫码对应的闪购会话，读取昵称、头像与当日订单，并与原短信账号分别保存。平台可能不提供手机号，此时不显示手机号。购买流程要求复核淘宝身份和独立的闪购买家会话；这两个 ID 不应直接比较。
 
@@ -84,6 +86,7 @@ dsh plugin --profile web add --save-exact github:vb2250158/dsh-waimai#<40位提�
 | `smsResendSeconds` | `60` | 验证码发送间隔秒，60–600；结果不明也占用间隔 |
 | `qrLifetimeSeconds` | `180` | 单次扫码等待上限秒，整数 60–600；平台可提前使二维码失效 |
 | `qrPollSeconds` | `2` | 扫码检查间隔秒，整数 2–15 |
+| `qrAuthorizationSeconds` | `60` | 手机确认后自动复核上限秒，整数 15–300 |
 | `browsePageSize` | `10` | 附近店铺每页数量，1–20 |
 | `hemaProductPageSize` | `30` | 盒马商品查询每页数量，整数 1–50 |
 | `hideSponsoredShops` | `true` | 隐藏推广店铺；可在「点单设置」关闭，保存后保留广告标签展示，查询会等候接口重连完成 |

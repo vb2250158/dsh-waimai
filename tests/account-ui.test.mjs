@@ -126,7 +126,8 @@ async function mount(rpc, options = {}) {
   runInNewContext(await readFile(new URL('../lib/client/index.js', import.meta.url), 'utf8'), {
     window: { localStorage, __ModuleLoader__: { load(entry) { module = entry.factory(name => name === 'react' ? React : primitives) } } },
     document: { createElement: () => ({ dataset: {}, remove() {} }), head: { appendChild() {} } },
-    structuredClone, setInterval, clearInterval, setTimeout, clearTimeout, crypto: { randomUUID: () => 'synthetic-id' },
+    structuredClone, setInterval, clearInterval, setTimeout: options.setTimeout || setTimeout,
+    clearTimeout: options.clearTimeout || clearTimeout, crypto: { randomUUID: () => 'synthetic-id' },
   })
   const snapshot = { status: 'ready', writable: true, revision: 1, value: Config(options.config || {}).get() }
   const form = { subscribe: () => () => {}, getSnapshot: () => snapshot, mutate: options.mutate || (async () => true) }
@@ -213,15 +214,54 @@ test('Taobao QR renders in the private plugin page, preserves the current accoun
     const click = label => root.findAllByType('button').find(button => text(button.props.children) === label).props.onClick()
     assert(!root.findAllByType('button').some(button => text(button.props.children) === '获取淘宝登录二维码'))
     await act(async () => click('添加账号'))
-    await act(async () => click('获取淘宝登录二维码'))
     const image = root.findAllByType('img').find(value => value.props.alt === '淘宝扫码')
     assert.equal(image.props.src, 'data:image/png;base64,synthetic')
-    assert(text(mounted.renderer.toJSON()).includes('闪购账号授权尚未确认'))
+    assert(text(mounted.renderer.toJSON()).includes('正在完成闪购登录'))
     assert(text(mounted.renderer.toJSON()).includes(profile.nickname))
     assert(!calls.some(value => value.endpoint === 'qrPoll'))
     await act(async () => click('历史订单'))
     assert(!root.findAllByType('img').some(value => value.props.alt === '淘宝扫码'))
     assert(calls.some(value => value.endpoint === 'qrCancel' && value.payload.attemptId === attemptId))
+  } finally { mounted.close() }
+})
+
+test('opening QR sign-in creates the code and automatically completes business verification without a check button', async () => {
+  const attemptId = '11111111-1111-4111-8111-111111111111', timers = new Map(), calls = []
+  let timerId = 0, polls = 0
+  const mounted = await mount({ async call(_channel, endpoint) {
+    calls.push(endpoint)
+    if (endpoint === 'status') return ok({ authenticated: true, state: 'logged-in', loginMethod: 'sms' })
+    if (endpoint === 'accountBegin') return ok({ authenticated: true, state: 'logged-in', addingAccount: true })
+    if (endpoint === 'profile') return ok(profile)
+    if (endpoint === 'qrStart') return ok({ authenticated: true, state: 'logged-in', addingAccount: true,
+      qr: { attemptId, state: 'waiting', image: 'data:image/png;base64,synthetic', expiresAt: Date.now() + 180000, pollAfterMs: 2000 } })
+    if (endpoint === 'qrPoll') {
+      if (++polls === 2) return { ok: false, error: { code: 'temporary-failure', message: '请求暂时失败' } }
+      const linked = polls === 3
+      return ok({ authenticated: true, state: 'logged-in', addingAccount: !linked,
+        qr: { attemptId, state: linked ? 'linked' : 'business-unconfirmed', authorizationExpiresAt: Date.now() + 60000, pollAfterMs: 2000 } })
+    }
+    if (endpoint === 'qrCancel') return ok({ qr: { attemptId, state: 'canceled' } })
+    return ok({ accountId: profile.id, orders: [], nextCursor: null })
+  } }, { setTimeout: fn => { const id = ++timerId; timers.set(id, fn); return id }, clearTimeout: id => timers.delete(id) })
+  const tick = async () => { const [id, fn] = timers.entries().next().value; timers.delete(id); await act(async () => fn()) }
+  try {
+    const root = mounted.renderer.root
+    await act(async () => root.findAllByType('button').find(button => text(button.props.children) === '添加账号').props.onClick())
+    assert.equal(calls.filter(value => value === 'qrStart').length, 1)
+    assert(!root.findAllByType('button').some(button => text(button.props.children) === '检查闪购授权'))
+    await tick()
+    assert(text(mounted.renderer.toJSON()).includes('正在完成闪购登录'))
+    assert(!text(mounted.renderer.toJSON()).includes('尚未检查登录状态'))
+    assert.deepEqual({ steps: root.findByProps({ className: 'waimai-qr-steps' }).findAllByType('li').map(node => text(node.props.children)),
+      status: text(root.findByProps({ className: 'waimai-qr-status' }).props.children),
+      actions: root.findByProps({ 'aria-label': '淘宝扫码', 'aria-busy': false }).findAllByType('button').map(node => text(node.props.children)) },
+      JSON.parse(await readFile(new URL('./fixtures/qr-flow.json', import.meta.url), 'utf8')))
+    await tick()
+    assert(text(mounted.renderer.toJSON()).includes('自动重试'))
+    await tick()
+    assert.equal(polls, 3); assert.equal(timers.size, 0)
+    assert(text(mounted.renderer.toJSON()).includes(profile.nickname))
   } finally { mounted.close() }
 })
 

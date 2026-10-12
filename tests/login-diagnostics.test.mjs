@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { loginResponseDiagnostic } from '../lib/login-diagnostics.js'
+import { loginResponseDiagnostic, registerLoginDiagnosticOutput } from '../lib/login-diagnostics.js'
 import { childEnv } from '../lib/env.js'
 
 test('login diagnostics retain protocol outcomes while rejecting all remote free text, identity and credentials', () => {
@@ -19,6 +19,16 @@ test('login diagnostics retain protocol outcomes while rejecting all remote free
   assert(!JSON.stringify(result).includes(secret))
   assert.equal(loginResponseDiagnostic({ content: { data: { qrCodeStatus: 'CONFIRMED' } } }).qrStatus, 'CONFIRMED')
   for (const input of [null, {}, { ret: 'secret', data: { returnValue: 'not-json-secret' } }]) assert.doesNotThrow(() => loginResponseDiagnostic(input))
+})
+
+test('the Host exporter captures only the sanitized login group and uses the logger lifecycle', () => {
+  let exporter, removed = false
+  const lines = []
+  const dispose = registerLoginDiagnosticOutput({ logger: { exporter(value) { exporter = value; return () => { removed = true } } } }, line => lines.push(line))
+  exporter.export({ ts: 0, args: ['unrelated synthetic-secret'] })
+  exporter.export({ ts: 0, args: ['waimai-mcp: [waimai-login] ' + JSON.stringify({ stage: 'qr-linked' })] })
+  assert.deepEqual(lines, ['1970-01-01T00:00:00.000Z waimai-mcp: [waimai-login] {"stage":"qr-linked"}'])
+  dispose(); assert(removed)
 })
 
 test('login diagnostics can be disabled through the plugin configuration', () => {
