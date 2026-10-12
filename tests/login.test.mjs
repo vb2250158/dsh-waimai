@@ -232,5 +232,14 @@ test('login HTTP channel authorizes, validates RPC envelopes and excludes secret
     assert.equal(called, 1)
     for (const endpoint of ['profile', 'orders']) assert.equal((await (await call(endpoint, {})).json()).result.ok, true)
     assert.equal(called, 3)
+    const owner = { platformId: 'taobao', accountRef: '11111111-1111-4111-8111-111111111111', addressRef: 'a'.repeat(64), shopId: 'store-17' }
+    assert.equal((await (await call('itemOptions', { ...owner, itemId: 'food-1', url: 'https://evil.example' })).json()).result.ok, false)
+    const change = { ...owner, itemId: 'food-1', step: 1, revision: 'b'.repeat(64), operationRef: '22222222-2222-4222-8222-222222222222',
+      selectionRef: '33333333-3333-4333-8333-333333333333', variantRef: 'c'.repeat(64), choiceRefs: [], quantity: 1 }
+    assert.equal((await (await call('cartChange', { ...change, variantRef: undefined })).json()).result.ok, false)
+    assert.equal(called, 3)
+    assert.equal((await (await call('itemOptions', { ...owner, itemId: 'food-1' })).json()).result.ok, true)
+    assert.equal((await (await call('cartChange', change)).json()).result.ok, true)
+    assert.equal(called, 5)
   } finally { server.closeAllConnections(); await new Promise(resolve=>server.close(resolve)) }
 })

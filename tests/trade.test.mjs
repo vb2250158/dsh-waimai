@@ -13,7 +13,7 @@ const address = { ref: 'a'.repeat(64), nativeId: '77', geohash: 'wtw3sjq6', coor
 const baseLine = { cart_id: 'cart-1', id: 'food-1', sku_id: 'sku-1', food_type: 1, tb_item_id: 'tb-item-1', tb_sku_id: 'tb-sku-1',
   name: '示例饭', quantity: 1, price: 20, total_price: 20, is_valid: 1, is_selected: true, attrs: [], new_specs: [], garnish: [] }
 const cartRaw = () => ({ total_quantity: 2, invalid_foods: [], cart: { restaurant: { encrypted_id: 'store-17' }, total: 20, minimum_order_amount: 10 },
-  couple_group: [{ cart_item_d_t_o_list: [baseLine, { ...baseLine, cart_id: 'cart-2', id: 'food-2', sku_id: 'sku-2', tb_item_id: 'tb-item-2',
+  couple_group: [{ cart_item_d_t_o_list: [structuredClone(baseLine), { ...baseLine, cart_id: 'cart-2', id: 'food-2', sku_id: 'sku-2', tb_item_id: 'tb-item-2',
     tb_sku_id: 'tb-sku-2', name: '无需餐具', price: 0, total_price: 0 }] }], tb_order: JSON.stringify({ buyParam: 'synthetic-selection', exParams: '{}' }) })
 function quoteRaw(cart = cartData(cartRaw(), 'store-17')) {
   const component = fields => ({ fields, props: { isSubmit: 'true' } })
@@ -69,7 +69,7 @@ async function fixture(options = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'waimai-trade-')), calls = [], raw = cartRaw()
   let now = 100000, rejectSubmit = false, accountId = '12345', selected = address
   let chain = Promise.resolve()
-  const login = { protocol: Object.fromEntries(['menuHead', 'menu', 'cart', 'checkout', 'submit', 'taobaoIdentity'].map(api => [api, { api }])),
+  const login = { protocol: Object.fromEntries(['menuHead', 'menu', 'itemOptions', 'cart', 'checkout', 'submit', 'taobaoIdentity'].map(api => [api, { api }])),
     http: { async storageState() { return { cookies: [{ name: 'unb', domain: '.ele.me', value: '87654' }, { name: 'unb', domain: '.taobao.com', value: '98765' }] } } },
     get accountId() { return accountId }, async requireAccount() {},
     run(operation) { const promise = chain.then(operation); chain = promise.catch(() => {}); return promise },
@@ -168,4 +168,77 @@ test('confirmed and uncertain orders count toward the shared daily cap', async (
     await assert.rejects(f.trade.submit(submitArgs(next)), error => error.code === 'over-budget')
     assert.equal(f.calls.filter(call => call.api === 'submit').length, 1)
   } finally { await f.close() }
+})
+
+async function selectionFixture({ ignoreMutation = false } = {}) {
+  const f = await fixture(), original = f.service.login.mtop.bind(f.service.login)
+  const item = { itemId: 'food-1', tbItemId: 'tb-item-1', storeId: 'store-17', name: '示例饭', price: 20, inSaleTime: true,
+    purchaseButton: { needMultiSpecs: 1, stock: 10, minPurchase: 1 },
+    specFoods: [{ foodId: 'food-1', skuId: 'sku-1', itemId: 'food-1', tbItemId: 'tb-item-1', tbSkuId: 'tb-sku-1', stock: 10, price: 20,
+      specs: [{ name: '份量', value: '大份' }] }] }
+  const detail = { ...item, error: false, minPurchase: 1, itemType: 1, brand: { attributes: [{ name: '辣度', minPurchased: 1, maxPurchased: 1,
+    details: [{ name: '微辣', saleStatus: 1, selected: true }] }] } }
+  f.service.login.mtop = async (spec, payload, retry) => {
+    if (spec.api === 'menu') { f.calls.push({ api: spec.api, payload, retry }); return { ret: ['SUCCESS::ok'], data: { resultMap: { menu: {
+      itemGroups: [{ groupId: 'main', groupType: 2, name: '主食', items: [item] }] } } } } }
+    if (spec.api === 'itemOptions') { f.calls.push({ api: spec.api, payload, retry }); return { ret: ['SUCCESS::ok'], data: structuredClone(detail) } }
+    if (spec.api === 'cart') {
+      const changes = JSON.parse(JSON.parse(payload.bizInfos).cartOperateParam).operating_entities
+      if (changes.length && ignoreMutation) { f.calls.push({ api: spec.api, payload, retry }); return { ret: ['SUCCESS::ok'], data: structuredClone(f.raw) } }
+      for (const change of changes) { const line = f.raw.couple_group[0].cart_item_d_t_o_list.find(line => line.id === change.id)
+        line.attrs = change.attrs; line.new_specs = change.new_specs }
+    }
+    return original(spec, payload, retry)
+  }
+  f.raw.couple_group[0].cart_item_d_t_o_list[0].attrs = [{ name: '辣度', value: '微辣' }]
+  f.raw.couple_group[0].cart_item_d_t_o_list[0].new_specs = [{ name: '份量', value: '大份' }]
+  const selection = await f.trade.itemOptions({ shopId: 'store-17', addressRef: address.ref, itemId: item.itemId })
+  const cart = await f.trade.cart('store-17', address.ref)
+  return { ...f, detail, args: { shopId: 'store-17', addressRef: address.ref, itemId: item.itemId, revision: cart.revision, step: 1,
+    operationRef: '11111111-1111-4111-8111-111111111111', selectionRef: selection.selectionRef,
+    variantRef: selection.variants[0].ref, choiceRefs: [selection.variants[0].groups[0].choices[0].ref], quantity: 2 } }
+}
+
+test('selected variants and required flavors are re-read, added once, displayed and retained when removing one', async () => {
+  const f = await selectionFixture()
+  try {
+    const changed = await f.trade.cartChange(f.args)
+    assert.equal(changed.quantity, 4); assert(changed.items[0].specification.includes('大份')); assert(changed.items[0].specification.includes('微辣'))
+    assert.equal(f.calls.filter(call => call.api === 'itemOptions').length, 2)
+    const mutations = f.calls.filter(call => call.api === 'cart' && JSON.parse(JSON.parse(call.payload.bizInfos).cartOperateParam).operating_entities.length)
+    assert.equal(mutations.length, 1); assert.equal(mutations[0].retry, false)
+    const reduced = await f.trade.cartChange({ shopId: 'store-17', addressRef: address.ref, revision: changed.revision, step: -1,
+      operationRef: '22222222-2222-4222-8222-222222222222', lineRef: changed.items[0].ref })
+    assert.equal(reduced.quantity, 3); assert.equal(reduced.items[0].specification, changed.items[0].specification)
+  } finally { await f.close() }
+})
+
+test('changed prices, foreign selections and switched accounts stop before changing the cart', async () => {
+  for (const scenario of ['price', 'reference', 'account']) {
+    const f = await selectionFixture()
+    try {
+      if (scenario === 'price') f.detail.specFoods[0].price++
+      if (scenario === 'reference') f.args.selectionRef = 'foreign'
+      if (scenario === 'account') f.changeAccount()
+      await assert.rejects(f.trade.cartChange(f.args), error => ['spec-changed', 'spec-stale'].includes(error.code))
+      assert(!f.calls.some(call => call.api === 'cart' && JSON.parse(JSON.parse(call.payload.bizInfos).cartOperateParam).operating_entities.length))
+    } finally { await f.close() }
+  }
+})
+
+test('a successful platform reply without the requested quantity is unconfirmed and cannot be sent again', async () => {
+  const f = await selectionFixture({ ignoreMutation: true })
+  try {
+    await assert.rejects(f.trade.cartChange(f.args), error => error.code === 'cart-result-unconfirmed')
+    await assert.rejects(f.trade.cartChange(f.args), error => error.code === 'cart-duplicate')
+    assert.equal(f.calls.filter(call => call.api === 'cart' && JSON.parse(JSON.parse(call.payload.bizInfos).cartOperateParam).operating_entities.length).length, 1)
+  } finally { await f.close() }
+})
+
+test('removed zero-quantity lines disappear and specification changes invalidate the cart revision', () => {
+  const raw = cartRaw(), first = cartData(raw, 'store-17'); raw.couple_group[0].cart_item_d_t_o_list[0].attrs = [{ name: '辣度', value: '微辣' }]
+  assert.notEqual(first.revision, cartData(raw, 'store-17').revision)
+  raw.couple_group[0].cart_item_d_t_o_list[0].quantity = 0; raw.total_quantity = 1
+  const reduced = cartData(raw, 'store-17'); assert.equal(reduced.lines.length, 1); assert.equal(reduced.display.quantity, 1)
+  raw.total_quantity = 2; assert.throws(() => cartData(raw, 'store-17'))
 })

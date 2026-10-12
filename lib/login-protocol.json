@@ -142,6 +142,14 @@
     "appKey": "12574478",
     "jsv": "2.7.2"
   },
+  "itemOptions": {
+    "url": "https://shopping.ele.me/h5/mtop.alsc.waimai.store.detail.item.purchased/1.0/",
+    "api": "mtop.alsc.waimai.store.detail.item.purchased",
+    "method": "POST",
+    "version": "1.0",
+    "appKey": "12574478",
+    "jsv": "2.7.2"
+  },
   "cart": {
     "url": "https://alsc-buy2.ele.me/h5/mtop.eleme.waimai.carts.shop.operate.um/1.0/",
     "api": "mtop.eleme.waimai.carts.shop.operate.um",

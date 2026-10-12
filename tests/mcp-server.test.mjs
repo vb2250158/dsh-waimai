@@ -36,6 +36,7 @@ const EXPECTED_TOOLS = [
   'account_nearby_shops',
   'account_probe_menu',
   'account_product_detail',
+  'account_item_options',
   'account_cart',
   'account_cart_change',
   'account_checkout',

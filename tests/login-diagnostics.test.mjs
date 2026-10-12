@@ -35,3 +35,11 @@ test('login diagnostics can be disabled through the plugin configuration', () =>
   assert.equal(childEnv({}).LOGIN_DIAGNOSTICS, 'true')
   assert.equal(childEnv({ loginDiagnostics: false }).LOGIN_DIAGNOSTICS, 'false')
 })
+
+test('the Host exporter captures projected cart outcomes without enabling other log groups', () => {
+  let exporter; const lines = []
+  registerLoginDiagnosticOutput({ logger: { exporter(value) { exporter = value; return () => {} } } }, line => lines.push(line))
+  exporter.export({ ts: 0, args: ['waimai-mcp: [waimai-cart] {"stage":"quantity-confirmed","quantityDelta":1}'] })
+  exporter.export({ ts: 0, args: ['waimai-mcp: [unrelated] synthetic-secret'] })
+  assert.equal(lines.length, 1); assert(lines[0].includes('quantity-confirmed')); assert(!lines[0].includes('synthetic-secret'))
+})

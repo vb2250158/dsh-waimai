@@ -1,4 +1,5 @@
 import { test } from 'node:test'
+import { randomUUID } from 'node:crypto'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { runInNewContext } from 'node:vm'
@@ -111,7 +112,7 @@ async function mount(rpc, options = {}) {
   rpc = { call(channel, endpoint, payload) {
     if (endpoint === 'platforms') return Promise.resolve(ok(platforms))
     if (endpoint === 'addresses') return options.addresses ? options.addresses(payload) : Promise.resolve(ok({ accountId: profile.id, addresses: [], selectedRef: null }))
-    if (payload.platformId === 'taobao' && ['cart', 'tradeHistory', 'cartChange', 'checkout', 'submit'].includes(endpoint)) {
+    if (payload.platformId === 'taobao' && ['cart', 'tradeHistory', 'itemOptions', 'cartChange', 'checkout', 'submit'].includes(endpoint)) {
       if (options.trade) return options.trade(endpoint, payload)
       return Promise.resolve(ok(endpoint === 'tradeHistory' ? { platformId: 'taobao', accountId: profile.id, attempts: [] }
         : { platformId: 'taobao', accountId: profile.id, addressRef: payload.addressRef, shopId: payload.shopId,
@@ -123,11 +124,13 @@ async function mount(rpc, options = {}) {
   const disposers = []
   const primitives = Object.fromEntries(['Button', 'Input', 'Switch', 'Menu', 'Checkbox', 'Tag', 'StateDot', 'IconPlusOutlineRegular', 'IconChevronDownOutlineRegular', 'IconTrashOutlineRegular'].map(name =>
     [name, props => React.createElement(name === 'Button' ? 'button' : 'span', props, props.children)]))
+  primitives.Modal = props => props.open ? React.createElement('section', { role: 'dialog', 'aria-label': props.title, onClose: props.onClose }, props.children, props.footer) : null
+  primitives.Toast = props => React.createElement('div', { role: 'alert' }, props.text)
   runInNewContext(await readFile(new URL('../lib/client/index.js', import.meta.url), 'utf8'), {
     window: { localStorage, __ModuleLoader__: { load(entry) { module = entry.factory(name => name === 'react' ? React : primitives) } } },
     document: { createElement: () => ({ dataset: {}, remove() {} }), head: { appendChild() {} } },
     structuredClone, setInterval, clearInterval, setTimeout: options.setTimeout || setTimeout,
-    clearTimeout: options.clearTimeout || clearTimeout, crypto: { randomUUID: () => 'synthetic-id' },
+    clearTimeout: options.clearTimeout || clearTimeout, crypto: { randomUUID },
   })
   const snapshot = { status: 'ready', writable: true, revision: 1, value: Config(options.config || {}).get() }
   const form = { subscribe: () => () => {}, getSnapshot: () => snapshot, mutate: options.mutate || (async () => true) }
@@ -175,6 +178,8 @@ test('Taobao cart shows an expiring server quote; creation requires explicit con
     await act(async () => button('查看菜单').props.onClick())
     await act(async () => button('加入购物车').props.onClick())
     assert.equal(calls.filter(call => call.endpoint === 'cartChange').length, 1)
+    assert(text(mounted.renderer.toJSON()).includes('已加入购物车'))
+    await act(async () => root.findByProps({ className: 'waimai-cart-trigger' }).props.onClick())
     await act(async () => button('去结算').props.onClick())
     assert.equal(button('确认创建订单').props.disabled, true)
     assert(text(mounted.renderer.toJSON()).includes('实付: ¥21.00'))
@@ -195,6 +200,67 @@ test('Taobao cart shows an expiring server quote; creation requires explicit con
     await act(async () => button('确认创建订单').props.onClick())
     assert(text(mounted.renderer.toJSON()).includes('勿重复提交'))
     assert(!button('确认创建订单'))
+  } finally { mounted.close() }
+})
+
+test('specifications require a variant and mandatory choices before adding; cart feedback stays visible and the cart opens in a modal', async () => {
+  const ref = '11111111-1111-4111-8111-111111111111', addressRef = 'a'.repeat(64), calls = []
+  const variantRefs = ['b'.repeat(64), 'c'.repeat(64)], choiceRefs = ['d'.repeat(64), 'e'.repeat(64)]
+  let quantity = 0, failure = false; const changePending = deferred()
+  const cart = () => ({ platformId: 'taobao', accountId: profile.id, addressRef, shopId: 'store-17', revision: 'f'.repeat(64),
+    quantity, totalCents: quantity * 1500, invalidCount: 0, items: quantity ? [{ ref: 'g'.repeat(64), name: '示例奶茶', specification: '标准杯 · 少冰', quantity, totalCents: 1500 }] : [] })
+  const mounted = await mount({ async call(_channel, endpoint) {
+    if (endpoint === 'status') return ok({ authenticated: true, state: 'logged-in', viewAccountRef: ref, accounts: [{ ref, nickname: profile.nickname }] })
+    if (endpoint === 'profile') return ok(profile)
+    if (endpoint === 'nearbyShops') return ok({ accountId: profile.id, addressRef, shops: [{ id: 'store-17', name: '示例店铺' }], nextCursor: null })
+    if (endpoint === 'probeMenu') return ok({ accountId: profile.id, addressRef, shopId: 'store-17', categories: [{ id: 'drinks', name: '饮品', items: [{ id: 'food-1',
+      name: '示例奶茶', description: '', price: '15', availability: 'available', requiresSelection: true, options: [], tips: [] }] }] })
+    throw Error('unexpected read')
+  } }, { addresses: async () => ok({ accountId: profile.id, selectedRef: addressRef, addresses: [{ ref: addressRef, address: '示例地址', usable: true }] }),
+    trade: async (endpoint, payload) => {
+      calls.push({ endpoint, payload })
+      if (endpoint === 'tradeHistory') return ok({ accountId: profile.id, attempts: [] })
+      if (endpoint === 'cart') return ok(cart())
+      if (endpoint === 'itemOptions') return ok({ ...cart(), name: '示例奶茶', itemId: 'food-1', selectionRef: ref, minimumQuantity: 1,
+        variants: [{ ref: variantRefs[0], name: '大杯', priceCents: 1700, available: true }, { ref: variantRefs[1], name: '标准杯', priceCents: 1500, available: true }],
+        groups: [{ ref: 'temperature', name: '温度', minimum: 1, maximum: 1, choices: [{ ref: choiceRefs[0], name: '少冰', available: true }, { ref: choiceRefs[1], name: '热', available: false }] }] })
+      if (endpoint === 'cartChange') {
+        if (failure) return changePending.promise
+        assert.equal(payload.variantRef, variantRefs[1]); assert.deepEqual(Array.from(payload.choiceRefs), [choiceRefs[0]]); assert.equal(payload.quantity, 1)
+        quantity++; return ok(cart())
+      }
+      throw Error('unexpected trade')
+    } })
+  try {
+    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(value => text(value.props.children) === label)
+    await act(async () => button('点餐').props.onClick()); await act(async () => button('查看菜单').props.onClick())
+    assert.equal(root.findAllByProps({ role: 'dialog' }).length, 0)
+    await act(async () => button('选规格').props.onClick())
+    assert.equal(button('加入购物车').props.disabled, true); assert.equal(button('热').props.disabled, true)
+    await act(async () => button('标准杯 · ¥15.00').props.onClick()); assert.equal(button('加入购物车').props.disabled, true)
+    await act(async () => button('少冰').props.onClick()); assert.equal(button('加入购物车').props.disabled, false)
+    const fixture = JSON.parse(await readFile(new URL('./fixtures/cart-specifications.expected.json', import.meta.url), 'utf8'))
+    assert.equal(root.findByProps({ role: 'dialog' }).props['aria-label'], fixture.dialog)
+    assert.deepEqual(fixture.choices.filter(label => button(label)).length, fixture.choices.length)
+    await act(async () => button('加入购物车').props.onClick())
+    assert.equal(root.findAllByProps({ role: 'dialog' }).length, 0)
+    assert(text(mounted.renderer.toJSON()).includes(fixture.readyFeedback))
+    assert.equal(root.findByProps({ className: 'waimai-cart-trigger' }).findAll(node => ['span', 'strong'].includes(node.type)).map(node => text(node.props.children)).join(''), fixture.floatingCart)
+    await act(async () => root.findByProps({ className: 'waimai-cart-trigger' }).props.onClick())
+    assert.equal(root.findByProps({ role: 'dialog' }).props['aria-label'], '购物车')
+    assert(text(mounted.renderer.toJSON()).includes('标准杯 · 少冰'))
+    await act(async () => root.findByProps({ role: 'dialog' }).props.onClose())
+    failure = true
+    await act(async () => button('选规格').props.onClick()); await act(async () => button('标准杯 · ¥15.00').props.onClick()); await act(async () => button('少冰').props.onClick())
+    const add = button('加入购物车'); await act(async () => { add.props.onClick(); add.props.onClick() })
+    assert.equal(button('正在加入…').props.disabled, true)
+    assert.equal(calls.filter(call => call.endpoint === 'cartChange').length, 2)
+    await act(async () => changePending.resolve({ ok: false, error: { code: 'cart-result-unconfirmed', message: '数量未确认，请刷新购物车核对' } }))
+    assert.equal(root.findByProps({ role: 'dialog' }).props['aria-label'], '购物车')
+    assert(text(mounted.renderer.toJSON()).includes('数量未确认'))
+    assert(!text(mounted.renderer.toJSON()).includes('已加入购物车'))
+    assert.equal(quantity, 1)
+    assert(!calls.some(call => ['checkout', 'submit'].includes(call.endpoint)))
   } finally { mounted.close() }
 })
 
