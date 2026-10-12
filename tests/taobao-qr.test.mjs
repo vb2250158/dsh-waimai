@@ -44,14 +44,15 @@ async function fixture(options = {}) {
     dispose: async () => { disposed++ },
   }
   const old = { dispose: async () => { disposed++ } }
-  const login = new WaimaiLogin({ statePath: path, createContext: async args => {
+  const events = []
+  const login = new WaimaiLogin({ statePath: path, diagnostic: event => events.push(event), createContext: async args => {
     if (contexts++ === 0) return old
     if (contexts === 2) return qr
     restored = args.storageState; businessActive = true
     return { ...qr, storageState: async () => restored }
   } })
   await login.init()
-  return { login, qr, old, calls, original, path, restored: () => restored, disposed: () => disposed, close: async () => { await login.close(); await rm(dir, { recursive: true, force: true }) } }
+  return { login, qr, old, calls, events, original, path, restored: () => restored, disposed: () => disposed, close: async () => { await login.close(); await rm(dir, { recursive: true, force: true }) } }
 }
 
 test('QR generation and polling use a fresh jar, render locally, and keep tokens out of the settings response', async () => {
@@ -76,6 +77,11 @@ test('confirmed Taobao login cannot replace the old account without independent 
   try {
     const start = await f.login.qrStart(), result = await f.login.qrPoll(start.qr.attemptId)
     assert.equal(result.qr.state, 'business-unconfirmed'); assert.equal(f.login.http, f.old)
+    const failed = f.events.find(event => event.stage === 'mtop.alibaba.ucc.taobao.apply.usertoken')
+    assert.deepEqual(failed.ret, ['FAIL_SYS_SESSION_EXPIRED'])
+    assert.equal(failed.attemptId, start.qr.attemptId)
+    assert(f.events.some(event => event.stage === 'ucc-unconfirmed'))
+    assert(!JSON.stringify(f.events).includes('synthetic'))
     assert.deepEqual(JSON.parse(await readFile(f.path, 'utf8')), f.original)
     await assert.rejects(readFile(f.path + '.previous.json'), { code: 'ENOENT' })
   } finally { await f.close() }
@@ -100,6 +106,8 @@ test('confirmed Taobao QR exchanges UCC credentials in a new jar and verifies bo
   try {
     const start = await f.login.qrStart(), result = await f.login.qrPoll(start.qr.attemptId)
     assert.equal(result.qr.state, 'linked'); assert.equal(result.loginMethod, 'taobao-qr')
+    for (const stage of ['business-profile-verified', 'business-orders-verified', 'qr-linked']) assert(f.events.some(event => event.stage === stage))
+    assert(!JSON.stringify(f.events).includes('synthetic'))
     assert.notEqual(f.login.http, f.qr); assert.notEqual(f.login.http, f.old)
     assert.equal(f.restored().cookies.find(c => c.name === 'SID').value, 'synthetic-business-session')
     assert.equal(f.disposed(), 2)

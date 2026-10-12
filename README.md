@@ -41,6 +41,8 @@ DeepSeek Harness 多平台外卖插件。淘宝闪购和盒马通过 HTTP 读取
 
 淘宝二维码通过官方 `/havanaone/loginLegacy/qrCode/generate.do` 获取，并轮询 `/havanaone/loginLegacy/qrCode/query.do`。二维码在后端生成 PNG，临时令牌与 Cookie 不返回页面。每次扫码使用独立会话，取消、过期或切换页签会停止检查。淘宝确认后，通过 `mtop.alibaba.ucc.taobao.apply.usertoken` 与 `mtop.alibaba.ucc.oauthLogin` 换取闪购业务会话。仅接受 Eleme 站点的已确认会话，校验 Cookie 域名及账号 ID，再用业务接口复核本地 ID、Havana ID、资料与订单，全部通过后才保存。授权失败或额外验证时保留原账号；注册、绑定、换绑接口不会自动调用。
 
+扫码卡在授权阶段时，在插件页面重新获取二维码并确认登录。`loginDiagnostics` 默认开启，现有 Host 日志中的 `[waimai-login]` 按 `attemptId` 记录二维码确认、业务初始化、令牌与 UCC 接口返回码及授权类型、资料和订单核验、失败和取消。日志仅保留固定字段、类型与数量，不记录远端说明、URL、二维码内容、Token、Cookie 或个人资料；重复等待状态不重复记录。关闭该配置停止记录，登录行为保持原样。
+
 手机号登录的订单可能与淘宝账号所关联的闪购账号不同，仅改变订单查询渠道不能证明账号一致。真实验收已取得淘宝扫码对应的闪购会话，读取昵称、头像与当日订单，并与原短信账号分别保存。平台可能不提供手机号，此时不显示手机号。购买流程要求复核淘宝身份和独立的闪购买家会话；这两个 ID 不应直接比较。
 
 ## 闪购结算与购买

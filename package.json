@@ -1,6 +1,6 @@
 {
   "name": "dsh-waimai",
-  "version": "0.2.16",
+  "version": "0.2.17",
   "description": "DSH 外卖助手：淘宝闪购与盒马 HTTP 登录、地址、菜单和历史订单；闪购购物车、实时报价、确认下单与官方支付入口。",
   "type": "module",
   "main": "lib/index.js",
