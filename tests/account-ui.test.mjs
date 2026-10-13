@@ -48,6 +48,61 @@ test('Hema chat products open a specifications modal using the recorded account 
   } finally { mounted.close() }
 })
 
+test('Hema chat add chooses a SKU, submits once and reconciles a delayed result through the floating cart', async () => {
+  const fixture = JSON.parse(await readFile(new URL('./fixtures/agent-hema-product-detail.json', import.meta.url), 'utf8'))
+  const result = JSON.parse(fixture.props.block.content[0].text).data, addressRef = 'a'.repeat(64), calls = []
+  let operationRef, reads = 0, resolveAdd
+  const cart = () => ({ platformId: 'hema', accountId: profile.id, addressRef, revision: 'b'.repeat(64), items: [], availableCount: 0, selectedCount: 0,
+    ...(operationRef ? { mutation: { operationRef, state: ++reads > 1 ? 'verified' : 'unconfirmed' } } : {}) })
+  const mounted = await mount({ async call(_channel, method, payload) {
+    calls.push({ method, payload })
+    if (method === 'profile') return ok(profile)
+    if (method === 'productDetail') return ok({ ...result, accountId: profile.id, addressRef })
+    if (method === 'cart') return ok(cart())
+    if (method === 'cartAdd') { operationRef = payload.operationRef; return new Promise(resolve => { resolveAdd = () => resolve(ok(cart())) }) }
+    throw Error('unexpected method')
+  } }, { tool: fixture, addresses: async () => ok({ accountId: profile.id, selectedRef: addressRef }) })
+  try {
+    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
+    await act(async () => button('刷新商品规格').props.onClick())
+    assert(button('加入购物车').props.disabled)
+    const variant = root.findAll(node => node.type === 'span' && Array.isArray(node.props.items) && node.props.items.some(row => row.id === result.product.variants[0].id))[0]
+    await act(async () => variant.props.onSelect(result.product.variants[0].id))
+    assert.equal(button('加入购物车').props.disabled, false)
+    await act(async () => { button('加入购物车').props.onClick(); button('加入购物车').props.onClick() })
+    assert.equal(calls.filter(row => row.method === 'cartAdd').length, 1); assert(button('正在加入…').props.disabled)
+    await act(async () => resolveAdd())
+    assert.equal(root.findAllByProps({ role: 'dialog' }).length, 2)
+    assert(text(root).includes('已加入购物车'))
+    assert(calls.every(row => row.payload.platformId === 'hema' && row.payload.accountRef === '11111111-1111-4111-8111-111111111111'))
+    const sent = calls.find(row => row.method === 'cartAdd').payload
+    assert.equal(sent.quantity, 1); assert.equal(sent.skuId, result.product.variants[0].id)
+    const expected = JSON.parse(await readFile(new URL('./fixtures/agent-hema-cart-add.json', import.meta.url), 'utf8'))
+    assert.deepEqual({ variant: result.product.variants[0].name, quantity: sent.quantity, pendingLabel: '正在加入…',
+      verifiedLabel: '已加入购物车', cartDialog: root.findAllByProps({ role: 'dialog' }).at(-1).props['aria-label'],
+      requestCount: calls.filter(row => row.method === 'cartAdd').length, privateReads: calls.map(row => row.method) }, expected)
+    assert(!calls.some(row => ['checkout', 'submit'].includes(row.method)))
+  } finally { mounted.close() }
+})
+
+test('a recorded Hema cart opens a fresh cart modal for its account without reusing recorded prices', async () => {
+  const ref = '11111111-1111-4111-8111-111111111111', addressRef = 'a'.repeat(64), calls = []
+  const fixture = { name: 'mcp__waimai__get_cart', props: { phase: 'result', sessionId: 'hema-cart', callId: 'cart-read', args: { accountRef: ref, platformId: 'hema' },
+    block: { content: [{ type: 'text', text: JSON.stringify({ success: true, data: { view: 'cart', platformId: 'hema', accountRef: ref, items: [] } }) }] } } }
+  const mounted = await mount({ async call(_channel, method, payload) { calls.push({ method, payload });
+    if (method === 'profile') return ok(profile)
+    if (method === 'cart') return ok({ accountId: profile.id, addressRef, items: [], availableCount: 0, selectedCount: 0 })
+    throw Error('unexpected read')
+  } }, { tool: fixture, addresses: async () => ok({ accountId: profile.id, selectedRef: addressRef }) })
+  try {
+    const root = mounted.renderer.root
+    assert.equal(calls.length, 0)
+    await act(async () => root.findAllByType('button').find(node => text(node.props.children) === '查看购物车').props.onClick())
+    assert.equal(root.findAllByProps({ role: 'dialog' }).length, 1)
+    assert.deepEqual(calls.map(row => row.method), ['profile', 'cart']); assert(calls.every(row => row.payload.accountRef === ref && row.payload.platformId === 'hema'))
+  } finally { mounted.close() }
+})
+
 test('a mismatched Hema account prevents product reads and failed refreshes discard old specifications', async () => {
   const fixture = JSON.parse(await readFile(new URL('./fixtures/agent-hema-product-detail.json', import.meta.url), 'utf8'))
   const result = JSON.parse(fixture.props.block.content[0].text).data, addressRef = 'a'.repeat(64), calls = []
@@ -65,10 +120,10 @@ test('a mismatched Hema account prevents product reads and failed refreshes disc
     const modal = () => root.findByProps({ role: 'dialog' })
     assert(text(modal()).includes('账号已变化'))
     mismatch = false
-    await act(async () => modal().findByType('button').props.onClick())
+    await act(async () => modal().findAllByType('button').find(node => text(node.props.children) === '刷新商品规格').props.onClick())
     assert(text(modal()).includes(result.product.name))
     fail = true
-    await act(async () => modal().findByType('button').props.onClick())
+    await act(async () => modal().findAllByType('button').find(node => text(node.props.children) === '刷新商品规格').props.onClick())
     assert(!text(modal()).includes(result.product.name)); assert(text(modal()).includes('商品选择已失效'))
   } finally { mounted.close() }
 })
@@ -230,7 +285,7 @@ test('Hema view uses explicit Taobao sign-in, private account scope and remote p
     const price = text(root.findByProps({ className: 'waimai-price' }).props.children)
     const view = { platform: '盒马', tabs: root.findByType('nav').findAllByType('button').map(button => text(button.props.children)), loginMethods, stores,
       search: calls.find(call => call.endpoint === 'probeMenu' && call.payload.keyword)?.payload.keyword, price,
-      ordering: '可查询商品，下单与支付暂未开放。' }
+      ordering: root.findAllByType('p').map(node => text(node.props.children)).find(value => value.startsWith('可选规格加购')) }
     assert.deepEqual(view, JSON.parse(await readFile(new URL('./fixtures/hema-view.json', import.meta.url), 'utf8')))
     await act(async () => click('查看规格'))
     const specs = { price: root.findAllByProps({ className: 'waimai-price' }).map(value => text(value.props.children)),

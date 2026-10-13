@@ -50,3 +50,12 @@ test('payment cards project official order status without credentials or payment
   assert.equal(result.attempts[0].officialOrders[0].status, '待支付'); assert.equal(result.attempts[0].paymentStatus, 'unconfirmed')
   assert.deepEqual(calls, ['tradeHistory', 'orders'])
 })
+
+test('Hema agent cart and SKU add use the shared account owner and retain the action identity', async () => {
+  const calls = [], call = tools(async (method, args) => { calls.push({ method, args }); return { platformId: 'hema', accountId: 'private-account',
+    addressRef: address, revision, items: [], mutation: { operationRef: ref, state: 'unconfirmed' } } })
+  const current = await call('get_cart', { platformId: 'hema', accountRef: ref })
+  assert.equal(current.view, 'cart'); assert.equal(current.accountRef, ref); assert(!JSON.stringify(current).includes('private-account')); assert(!current.addressRef)
+  const result = await call('add_product_to_cart', { platformId: 'hema', accountRef: ref, productRef: ref, skuId: '7002', quantity: 1, revision, operationRef: ref })
+  assert.deepEqual(calls.map(row => row.method), ['cart', 'cartAdd']); assert.equal(calls[1].args.operationRef, ref); assert.equal(result.mutation.state, 'unconfirmed')
+})

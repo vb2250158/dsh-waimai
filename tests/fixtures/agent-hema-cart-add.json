@@ -1,0 +1,9 @@
+{
+  "variant": "570ml×24瓶/箱",
+  "quantity": 1,
+  "pendingLabel": "正在加入…",
+  "verifiedLabel": "已加入购物车",
+  "cartDialog": "购物车",
+  "requestCount": 1,
+  "privateReads": ["profile", "productDetail", "cart", "cartAdd", "cart"]
+}

@@ -22,4 +22,4 @@ get_menu 使用返回的稳定 shopId，读取当前菜品、标价和库存。�
 
 创建成功后用 request_payment 展示本机订单对应的官方付款入口，用户在官方收银台完成付款。付款 URL 由私人鉴权界面读取，不进入模型。get_order_status 用 accountRef 和可选 orderRef 查询本机记录及对应官方状态；HTTP 200、支付入口或本机 paymentStatus: unconfirmed 不能声称已付款。订单结果未知时先核对官方订单，保留尝试与预算占用，不重复提交。平台要求额外验证时由用户在官方窗口完成。
 
-盒马支持商品搜索、规格与只读购物车，不能购买；不将菜单标价、示例数据或其他账号订单代替当前真实结算。真实创建与付款尚未实单验收，能力实现与购买成功分别报告。
+盒马使用 get_menu 的 keyword 搜索商品，get_product_details 核对 productRef 对应的规格；用户可在会话弹窗选择 SKU 与整数数量加购。Agent 先 get_cart(platformId: hema) 读取 revision，再 add_product_to_cart 传 productRef、skuId、quantity、revision 和固定 operationRef。未知结果只 get_cart 回读；同一操作不重新分配 operationRef，不重试修改。保留其他商品和勾选状态，称重及跨平台商品的加购方式未确认时停止。盒马结算、会员优惠和付款仍待接入；购物车显示价不能代替最终实付。真实创建与付款尚未实单验收，能力实现与购买成功分别报告。

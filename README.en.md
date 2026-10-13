@@ -1,6 +1,6 @@
 # dsh-waimai
 
-A DeepSeek Harness plugin for Taobao Instant Commerce and read-only Hema browsing. Sign-in, addresses, menus, cart and checkout use account-scoped HTTP interfaces. Meituan and JD are not integrated; Hema purchasing is disabled.
+A DeepSeek Harness plugin for Taobao Instant Commerce and Hema. Account-scoped HTTP provides sign-in, addresses, history, products and carts. Hema supports integer SKU additions; its checkout, membership discounts and payment integration remain pending. Meituan and JD are not integrated.
 
 QR accounts show the Taobao display nickname and self portrait from the same authenticated session. A portrait with another native nickname is rejected. Missing or failed portraits use the nickname initial with a refresh notice. Account IDs remain in account details; an absent nickname uses the unnamed-account label. Both the Taobao identity and ordering identity are checked around the read; changed identities stop profile display.
 
@@ -8,7 +8,9 @@ Each platform declares its login methods and default entry. Taobao provides QR a
 
 ## Agent ordering
 
-Hema products in the conversation open a specifications modal. get_product_details renders pack sizes, minimum quantity, quantity step, stock and pricing units. Recorded details warn that prices and stock can change. Refresh uses the account from the recorded tool call and verifies its current delivery address; changed identities, invalid product references and failed refreshes discard previous details. An unconfirmed price is never rendered as zero. Specifications cards do not add to cart, create orders or pay.
+Hema products open a specifications modal. get_product_details renders pack sizes, minimum quantity, quantity step, stock and pricing units. Recorded details require a fresh check. Refresh uses the recorded account and its currently selected address; changed identities, invalid references and failed refreshes discard old details. Plugin and conversation controls share SKU and quantity selection, pending feedback and a floating cart modal. Success requires a matching SKU quantity delta with every unrelated line retained. Weighted and cross-platform products stop when their native add semantics are unconfirmed.
+
+Agents read get_cart with platformId hema, then add_product_to_cart with productRef, skuId, integer quantity, revision and a stable operationRef. Native additions are sent once. The complete before snapshot and result remain in the private account file hema-cart-attempts.json. Timeouts and delayed readback require only cart reads; reload never resends. An unresolved attempt blocks new additions. Cart display prices do not establish membership discounts, delivery charges or the final amount due.
 
 search_shops returns an opaque nextCursor for nearby merchant pages, including pages with no keyword matches. Positions are bound to the account, query, scope and native delivery selection; reloads, expiry or eviction require restarting from the first page. Advanced settings expose browseCursorSeconds and browseCursorLimit.
 

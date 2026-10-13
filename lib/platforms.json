@@ -54,7 +54,9 @@
       "checkout": false,
       "createOrder": false,
       "payment": false,
-      "coupons": false
+      "coupons": false,
+      "cart": true,
+      "cartAdd": true
     },
     "reason": "ordering-unverified"
   },

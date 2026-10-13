@@ -35,6 +35,7 @@ const EXPECTED_TOOLS = [
   'account_nearby_shops',
   'account_probe_menu',
   'account_product_detail',
+  'account_cart_add',
   'account_item_options',
   'account_cart',
   'account_cart_change',
@@ -56,6 +57,7 @@ const EXPECTED_TOOLS = [
   'get_product_details',
   'preview_checkout',
   'get_cart',
+  'add_product_to_cart',
   'get_item_options',
   'change_cart',
   'show_order',
@@ -91,6 +93,10 @@ test('the server advertises every takeaway tool', async () => {
       assert.ok(names.includes(expected), `missing tool ${expected}`)
     }
     assert.equal(names.length, EXPECTED_TOOLS.length)
+    const add = tools.find(tool => tool.name === 'add_product_to_cart')
+    assert.deepEqual(add.inputSchema.required, ['platformId', 'accountRef', 'productRef', 'skuId', 'quantity', 'revision', 'operationRef'])
+    const cart = tools.find(tool => tool.name === 'get_cart')
+    assert.deepEqual(cart.inputSchema.properties.platformId.enum, ['taobao', 'hema'])
   } finally {
     await close()
   }
