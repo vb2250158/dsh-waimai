@@ -96,6 +96,15 @@ test('the server advertises every takeaway tool', async () => {
   }
 })
 
+test('merchant browsing keeps the configured default platform while product queries remain explicitly Taobao scoped', async () => {
+  const { client, close } = await connect({ DEFAULT_PLATFORM: 'hema' })
+  try {
+    const { tools } = await client.listTools()
+    assert.equal(tools.find(tool => tool.name === 'search_shops').inputSchema.properties.platformId.default, 'hema')
+    assert.equal(tools.find(tool => tool.name === 'search_products').inputSchema.properties.platformId.const, 'taobao')
+  } finally { await close() }
+})
+
 test('request_payment accepts only account and order references, without caller-selected payment amount', async () => {
   const { client, close } = await connect({ PAYMENT_MODE: 'auto', MAX_ORDER_AMOUNT: '35' })
   try {

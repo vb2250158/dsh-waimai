@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1 — 2026-10-13
+
+- 店铺分页查询沿用插件配置的默认平台；商品查询仍明确限定淘宝闪购，不把盒马默认设置改为淘宝。
+- Merchant pagination preserves the configured default platform; the product query tool remains explicitly Taobao-only.
+
 ## 0.4.0 — 2026-10-13
 
 - Agent 店铺查询增加账号和地址绑定的匿名分页游标；新增指定店铺商品名称查询与会话卡片，保留整箱规格原文、标价、可售状态和读取失败信息。

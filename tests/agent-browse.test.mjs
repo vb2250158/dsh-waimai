@@ -15,6 +15,13 @@ function tools(dispatch, options = {}) {
   return (name, input) => operations.get(name)(input)
 }
 
+test('merchant browsing preserves the configured platform when omitted from the request', async () => {
+  let received
+  const run = tools(async (_method, input) => { received = input; return { platformId: input.platformId, scope: 'nearby', shops: [], nextCursor: null } }, { defaultPlatform: 'hema' })
+  const value = await run('search_shops', { accountRef, scope: 'nearby', keyword: '' })
+  assert.equal(received.platformId, 'hema'); assert.equal(value.platformId, 'hema')
+})
+
 test('an empty filtered page keeps a private next position so the agent can reach a later supermarket', async () => {
   const calls = [], native = { offset: 10, accountId: '12345', addressRef: privateAddress, rankId: 'private-rank' }
   const run = tools(async (_method, input) => {
