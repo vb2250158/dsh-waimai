@@ -128,6 +128,29 @@ test('a mismatched Hema account prevents product reads and failed refreshes disc
   } finally { mounted.close() }
 })
 
+test('fresh Hema specifications show a closed sale period and prevent add even when the selected SKU has stock', async () => {
+  const fixture = JSON.parse(await readFile(new URL('./fixtures/agent-hema-product-detail.json', import.meta.url), 'utf8'))
+  const result = JSON.parse(fixture.props.block.content[0].text).data, addressRef = 'a'.repeat(64), calls = []
+  result.product.available = false; result.product.availability = 'outside-sale-time'
+  const mounted = await mount({ async call(_channel, method) {
+    calls.push(method)
+    if (method === 'profile') return ok(profile)
+    if (method === 'productDetail') return ok({ ...result, accountId: profile.id, addressRef })
+    throw Error('Closed store must not issue cart operations')
+  } }, { tool: fixture, addresses: async () => ok({ accountId: profile.id, selectedRef: addressRef }) })
+  try {
+    const root = mounted.renderer.root
+    await act(async () => root.findAllByType('button').find(node => text(node.props.children) === '刷新商品规格').props.onClick())
+    const variant = root.findAll(node => node.type === 'span' && Array.isArray(node.props.items) && node.props.items.some(row => row.id === result.product.variants[0].id))[0]
+    await act(async () => variant.props.onSelect(result.product.variants[0].id))
+    const add = root.findAllByType('button').find(node => text(node.props.children) === '加入购物车')
+    assert(add.props.disabled); await act(async () => add.props.onClick())
+    assert(text(root.findByProps({ role: 'dialog' })).includes('非售卖时段'))
+    assert.deepEqual({ label: '非售卖时段', addEnabled: !add.props.disabled, cartWrites: calls.filter(method => method === 'cartAdd').length },
+      JSON.parse(await readFile(new URL('./fixtures/agent-hema-product-closed.json', import.meta.url), 'utf8')))
+  } finally { mounted.close() }
+})
+
 test('recorded product queries retain identical items in different stores and open the selected merchant within the recorded account', async () => {
   const fixture = JSON.parse(await readFile(new URL('./fixtures/agent-product-search.json', import.meta.url), 'utf8')), calls = [], addressRef = 'a'.repeat(64)
   const mounted = await mount({ async call(_channel, method, payload) {

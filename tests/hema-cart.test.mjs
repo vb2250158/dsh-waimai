@@ -15,12 +15,14 @@ const detail = { templateVO: { global: { itemId: '8002', shopId: '123', itemName
   skuItemList: [{ skuId: '7002', saleSpec: '570ml×24', saleUnit: '箱', chargeUnit: '箱', increment: 1, startWith: 1, stockQuantity: 5 }] } } }
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), 'hema-cart-')), calls = [], events = [], nodes = [structuredClone(other)]
-  let delay = false, fail = false, foreignChange = false, identity = '12345', readsAfterAdd = 0
+  let delay = false, fail = false, foreignChange = false, closed = false, identity = '12345', readsAfterAdd = 0
   const selected = { ref: addressRef, geoCode: 'private-address', groups: [{ groupId: 'group', ext: { shopIds: '123' } }] }
   const login = { accountId: identity, run: fn => fn(), requireAccount: async () => {}, verifyIdentity: async expected => { if (identity !== expected) throw Error('identity changed') },
     diagnostic: event => events.push(event), protocol: JSON.parse(await readFile(new URL('../lib/hema-protocol.json', import.meta.url), 'utf8')),
     async mtop(spec, payload, retry = true) {
       calls.push({ api: spec.api, method: spec.method || 'GET', payload, retry })
+      if (spec.api === 'mtop.wdk.search.item') return { ret: ['SUCCESS::fixture'], data: { isSuccess: true, module: { totalCount: 1, hasMorePage: '0',
+        dataList: [{ service: { serviceId: '8002', shopId: '123', serviceTitle: 'Synthetic case', price: '4990', inventory: '5', shopClosed: closed ? '1' : '0' } }] } } }
       if (spec.api === 'mtop.wdk.detail.openservice') return { ret: ['SUCCESS::fixture'], data: structuredClone(detail) }
       if (spec.api === 'mtop.wdk.cart.add') { if (fail) throw Error('private network response'); readsAfterAdd = 0; nodes.push(makeLine('9002', payload.itemId, payload.skuId, payload.quantity, true)); return { ret: ['SUCCESS::fixture'], data: {} } }
       if (spec.api !== 'mtop.trade.query.bag') throw Error('unexpected request')
@@ -31,9 +33,9 @@ async function fixture() {
       return { ret: ['SUCCESS::fixture'], data }
     }, checkReply: raw => { assert(raw.ret.some(row => row.startsWith('SUCCESS::'))) } }
   const service = new HemaService({ login, directory }); service.selectedAddress = async ref => { if (ref && ref !== addressRef) throw Error('address changed'); return selected }
-  service.productReads.set(productRef, { accountId: identity, addressRef, groupId: 'group', id: '8002', nativeShopId: '123' })
+  service.productReads.set(productRef, { accountId: identity, addressRef, groupId: 'group', query: 'water', catalogPage: { index: 0, tokens: {} }, id: '8002', nativeShopId: '123' })
   return { service, calls, events, nodes, directory, change: options => { if ('delay' in options) delay = options.delay; if ('fail' in options) fail = options.fail;
-    if ('foreignChange' in options) foreignChange = options.foreignChange; if ('identity' in options) identity = options.identity },
+    if ('foreignChange' in options) foreignChange = options.foreignChange; if ('identity' in options) identity = options.identity; if ('closed' in options) closed = options.closed },
     close: () => rm(directory, { recursive: true, force: true }) }
 }
 async function args(f) { return { addressRef, productRef, skuId: '7002', quantity: 1, revision: (await f.service.cart('hema', addressRef)).revision, operationRef } }
@@ -97,5 +99,19 @@ test('another journal lock blocks writes while cart reads retain its lock and cu
     await assert.rejects(f.service.cartAdd('hema', current), e => e.code === 'cart-locked')
     assert.equal((await f.service.cart('hema', addressRef)).items.length, 1)
     await rmdir(lock); assert(!f.calls.some(c => c.api === 'mtop.wdk.cart.add'))
+  } finally { await f.close() }
+})
+
+test('a store closing after product selection disables detail actions and stops native add despite available SKU stock', async () => {
+  const f = await fixture()
+  try {
+    const current = await args(f)
+    assert.equal((await f.service.productDetail('hema', productRef, addressRef)).product.available, true)
+    f.change({ closed: true })
+    const detail = await f.service.productDetail('hema', productRef, addressRef)
+    assert.equal(detail.product.available, false); assert.equal(detail.product.variants[0].stockQuantity, 5)
+    assert.equal(detail.product.availability, 'outside-sale-time')
+    await assert.rejects(f.service.cartAdd('hema', current), error => error.code === 'item-unavailable')
+    assert(!f.calls.some(row => row.api === 'mtop.wdk.cart.add'))
   } finally { await f.close() }
 })
