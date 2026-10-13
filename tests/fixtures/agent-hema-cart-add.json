@@ -4,6 +4,7 @@
   "pendingLabel": "正在加入…",
   "verifiedLabel": "已加入购物车",
   "cartDialog": "购物车",
+  "cartScrollable": true,
   "requestCount": 1,
   "privateReads": ["profile", "productDetail", "cart", "cartAdd", "cart"]
 }

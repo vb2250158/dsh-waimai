@@ -80,6 +80,7 @@ test('Hema chat add chooses a SKU, submits once and reconciles a delayed result 
     const expected = JSON.parse(await readFile(new URL('./fixtures/agent-hema-cart-add.json', import.meta.url), 'utf8'))
     assert.deepEqual({ variant: result.product.variants[0].name, quantity: sent.quantity, pendingLabel: '正在加入…',
       verifiedLabel: '已加入购物车', cartDialog: root.findAllByProps({ role: 'dialog' }).at(-1).props['aria-label'],
+      cartScrollable: root.findAllByProps({ role: 'dialog' }).at(-1).findAllByProps({ className: 'waimai-cart-modal-content' }).length === 1,
       requestCount: calls.filter(row => row.method === 'cartAdd').length, privateReads: calls.map(row => row.method) }, expected)
     assert(!calls.some(row => ['checkout', 'submit'].includes(row.method)))
   } finally { mounted.close() }
