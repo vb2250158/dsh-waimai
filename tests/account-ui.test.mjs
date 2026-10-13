@@ -7,6 +7,76 @@ import React from 'react'
 import { create, act } from 'react-test-renderer'
 import { Config } from '../lib/index.js'
 
+test('a recorded menu tool renders actionable dishes and keeps private ordering scoped to its recorded account', async () => {
+  const recorded = JSON.parse(await readFile(new URL('./fixtures/agent-order-card.json', import.meta.url), 'utf8'))
+  const accountRef = '11111111-1111-4111-8111-111111111111', addressRef = 'a'.repeat(64), calls = []
+  const item = { id: 'food-1', name: '示例饭', price: '20', imageUrl: null, description: '', availability: 'available', options: [], tips: [] }
+  const menu = { platformId: 'taobao', shopId: 'store-17', categories: [{ id: 'main', name: '主食', items: [item] }] }
+  const mounted = await mount({ async call(_channel, method, payload) {
+    calls.push({ method, payload })
+    if (method === 'profile') return ok(profile)
+    if (method === 'probeMenu') return ok({ ...menu, accountId: profile.id, addressRef })
+    throw Error('Unexpected chat request: ' + method)
+  } }, { tool: recorded,
+    addresses: async payload => { calls.push({ method: 'addresses', payload }); return ok({ accountId: profile.id, selectedRef: addressRef, addresses: [{ ref: addressRef, address: '示例地址', contact: '', maskedPhone: '', usable: true }] }) } })
+  try {
+    assert(text(mounted.renderer.toJSON()).includes(recorded.expected.dish))
+    const button = mounted.renderer.root.findAllByType('button').find(node => text(node.props.children) === recorded.expected.action)
+    assert.equal(button.props.disabled, false)
+    await act(async () => button.props.onClick()); await act(async () => {})
+    assert(calls.length > 0); assert(calls.every(call => call.payload.accountRef === accountRef))
+    assert(text(mounted.renderer.toJSON()).includes('加入购物车'), text(mounted.renderer.toJSON()) + JSON.stringify(calls))
+    assert.equal(mounted.renderer.root.findAllByType('aside').length, 0)
+  } finally { mounted.close() }
+})
+
+test('payment cards read official order states without requiring a delivery address or creating an order', async () => {
+  const accountRef = '11111111-1111-4111-8111-111111111111', calls = []
+  const mounted = await mount({ async call(_channel, method, payload) { calls.push({ method, payload }); if (method === 'profile') return ok(profile); if (method === 'orders') return ok({ accountId: profile.id, orders: [{ id: '123', status: '已支付' }] }); throw Error('Unexpected request: ' + method) } }, {
+    tool: { name: 'mcp__waimai__request_payment', props: { phase: 'result', sessionId: 'payment-session', callId: 'payment-call', block: { content: [{ type: 'text', text: JSON.stringify({ success: true,
+      data: { view: 'payment', platformId: 'taobao', accountRef, attempts: [{ orderRef: accountRef }] } }) }] } } },
+    addresses: async () => { throw Error('Payment must not request addresses') },
+    trade: async (method, payload) => { calls.push({ method, payload }); return ok(method === 'tradeHistory' ? { accountId: profile.id, attempts: [{ orderRef: accountRef, merchant: '示例店', amountCents: 2100, status: 'created', orderIds: ['123'], paymentUrl: null }] }
+      : { accountId: profile.id, orders: [{ id: '123', status: '已支付' }] }) },
+  })
+  try {
+    assert(text(mounted.renderer.toJSON()).includes('官方订单状态: 已支付'))
+    assert(!text(mounted.renderer.toJSON()).includes('付款待确认'))
+    assert(calls.every(call => call.payload.accountRef === accountRef))
+    assert.deepEqual(calls.map(call => call.method).sort(), ['orders', 'profile', 'tradeHistory'])
+  } finally { mounted.close() }
+})
+
+test('the chat checkout card refreshes its quote and requires the user to confirm the bounded amount during automation preview', async () => {
+  const accountRef = '11111111-1111-4111-8111-111111111111', addressRef = 'a'.repeat(64), revision = 'b'.repeat(64), calls = []
+  const display = { platformId: 'taobao', shopId: 'store-17', revision, items: [{ ref: 'c'.repeat(64), name: '示例饭', quantity: 1, priceCents: 2000, totalCents: 2000 }], quantity: 1, invalidCount: 0, totalCents: 2100 }
+  const privateQuote = { ...display, accountId: profile.id, addressRef, quoteRef: '22222222-2222-4222-8222-222222222222', merchant: '示例店',
+    address: { address: '示例地址', contact: '', maskedPhone: '' }, fees: [{ name: '配送费', amountCents: 100 }], discountCents: 0,
+    expiresAt: Date.now() + 60000, deliveryTime: '30分钟', previewOnly: true, maxOrderCents: 3500 }
+  const mounted = await mount({ async call(_channel, method) { if (method === 'profile') return ok(profile); throw Error('unexpected chat call') } }, {
+    tool: { name: 'mcp__waimai__submit_order', props: { phase: 'result', sessionId: 'session-fixture', callId: 'quote-call', block: { content: [{ type: 'text', text: JSON.stringify({ success: true,
+      data: { ...display, view: 'checkout', accountRef, maxAmountCents: 2500 } }) }] } } },
+    addresses: async () => ok({ accountId: profile.id, selectedRef: addressRef, addresses: [{ ref: addressRef, address: '示例地址', contact: '', maskedPhone: '', usable: true }] }),
+    trade: async (method, payload) => { calls.push({ method, payload }); return ok(method === 'tradeHistory' ? { accountId: profile.id, attempts: [] }
+      : method === 'checkout' ? privateQuote : method === 'submit' ? { accountId: profile.id, orderIds: ['123'], paymentStatus: 'unconfirmed', paymentUrl: 'https://r.ele.me/payment?synthetic=1' }
+        : { ...display, accountId: profile.id, addressRef }) },
+  })
+  try {
+    const button = () => mounted.renderer.root.findAllByType('button').find(node => text(node.props.children) === '确认创建订单')
+    assert.equal(button().props.disabled, true)
+    assert(!calls.some(call => call.method === 'submit'))
+    const checkbox = mounted.renderer.root.findAll(node => node.type === 'span' && node.props.checked !== undefined)[0]
+    await act(async () => checkbox.props.onChange({ target: { checked: true } }))
+    assert.equal(button().props.disabled, false)
+    await act(async () => button().props.onClick())
+    assert.equal(calls.filter(call => call.method === 'submit').length, 1)
+    const submitted = calls.find(call => call.method === 'submit').payload
+    assert.equal(submitted.accountRef, accountRef); assert.equal(submitted.maxAmountCents, 2500); assert.equal(submitted.manualConfirmation, true)
+    assert(text(mounted.renderer.toJSON()).includes('付款待确认'))
+    assert.equal(mounted.renderer.root.findAllByType('a')[0].props.href, 'https://r.ele.me/payment?synthetic=1')
+  } finally { mounted.close() }
+})
+
 test('Hema view uses explicit Taobao sign-in, private account scope and remote product search without purchasing controls', async () => {
   const calls = [], ref = '11111111-1111-4111-8111-111111111111', source = '22222222-2222-4222-8222-222222222222', addressRef = 'a'.repeat(64)
   let linked = false
@@ -121,6 +191,7 @@ async function mount(rpc, options = {}) {
     return originalCall(channel, endpoint, payload)
   } }
   let module, Card, cardProps, dictionary
+  const toolCards = new Map()
   const disposers = []
   const primitives = Object.fromEntries(['Button', 'Input', 'Switch', 'Menu', 'Checkbox', 'Tag', 'StateDot', 'IconPlusOutlineRegular', 'IconChevronDownOutlineRegular', 'IconTrashOutlineRegular'].map(name =>
     [name, props => React.createElement(name === 'Button' ? 'button' : 'span', props, props.children)]))
@@ -138,11 +209,11 @@ async function mount(rpc, options = {}) {
     effect(fn) { disposers.push(fn()) }, connection: { rpc },
     locale: { register(_namespace, values) { dictionary = values.zh; return () => {} }, bind: () => key => dictionary[key] },
     configForms: { get: () => form, whileServed(_names, fn) { fn(); return () => {} } },
-    slots: { inject(_slot, fn) { return fn() }, register(spec, component) { Card = component; cardProps = spec.inject(); return () => {} } },
+    slots: { inject(_slot, fn) { return fn() }, register(spec, component) { if (spec.name === "tool.call.toolview") toolCards.set(spec.key, { component, props: spec.inject() }); else { Card = component; cardProps = spec.inject(); } return () => {} } },
   }
   module.apply(ctx)
   let renderer
-  await act(async () => { renderer = create(React.createElement(Card, cardProps)) })
+  await act(async () => { const selected = options.tool ? toolCards.get(options.tool.name) : { component: Card, props: cardProps }; renderer = create(React.createElement(selected.component, { ...selected.props, toolName: options.tool?.name, ...options.tool?.props })) })
   return { renderer, close: () => { act(() => renderer.unmount()); for (const dispose of disposers.reverse()) dispose?.() } }
 }
 
@@ -189,7 +260,7 @@ test('Taobao cart shows an expiring server quote; creation requires explicit con
     assert.equal(button('确认创建订单').props.disabled, false)
     await act(async () => { button('确认创建订单').props.onClick(); button('确认创建订单').props.onClick() })
     assert.equal(calls.filter(call => call.endpoint === 'submit').length, 1)
-    assert.deepEqual(JSON.parse(JSON.stringify(calls.find(call => call.endpoint === 'submit').payload)), { platformId: 'taobao', accountRef: ref, quoteRef, confirmed: true, confirmedCents: 2100 })
+    assert.deepEqual(JSON.parse(JSON.stringify(calls.find(call => call.endpoint === 'submit').payload)), { platformId: 'taobao', accountRef: ref, quoteRef, confirmed: true, confirmedCents: 2100, manualConfirmation: true, maxAmountCents: 3500 })
     assert.equal(root.findByType('a').props.href, 'https://r.ele.me/payment?synthetic=1')
     assert(!calls.some(call => /pay/.test(call.endpoint)))
     assert.equal(button('去结算').props.disabled, true)

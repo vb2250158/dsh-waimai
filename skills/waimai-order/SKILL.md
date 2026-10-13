@@ -1,19 +1,21 @@
 ---
 name: waimai-order
-description: 使用外卖插件查看平台能力、附近店铺与分类菜单，检查 HTTP 点餐状态。用户提出点外卖、查店铺或菜单时使用。
-whenToUse: 用户希望点外卖、查看店铺或检查点餐能力时
+description: 使用外卖工具查询店铺和菜单、展示会话点餐卡片、选规格加购、获取用户确认报价并核对订单与付款状态。
+whenToUse: 用户希望点外卖、推荐餐品、下单或查看订单付款状态时
 ---
 
-# 外卖 HTTP 工具
+# 会话点餐
 
-先调用 `mcp__waimai__list_platforms`，使用用户指定平台；未指定时读取 `get_status` 的默认平台。淘宝闪购已经接入登录、账号、地址和订单，美团与京东尚未接入。购买能力未验证时直接说明当前不可下单，不调用已移除的浏览器工具或回退到 H5。
+先调用 list_platforms、get_status，使用用户指定平台；未指定时使用配置默认平台。淘宝闪购支持 Agent 点餐与用户确认下单卡片；自动任务购买、自动扣款、盒马购买、美团和京东尚未接入。createOrder 能力表示自动创建，不能据此声称会话确认下单不可用；查看 manualOrderingAvailable 和 orderingAvailable。
 
-需要登录或选择地址时引导用户在「插件 → dsh-waimai → 账号与地址」完成。手机号、验证码、账号资料、地址文本和历史订单只能通过鉴权的插件页面读取，不索取到聊天里，不导出 Cookie。
+list_connections 返回已保存的账号引用。每次账号工具明确传 accountRef；多个账号不能猜测。同一账号须 prepare_ordering 复核登录及所选配送地址。缺登录或地址时引导「插件 → dsh-waimai → 账号与地址」；不索取手机号、验证码、地址文本或 Cookie 到聊天。
 
-`list_connections` 返回各平台已保存的账号引用，不返回昵称、手机号或凭据，也不证明会话仍有效。同一平台存在多个账号时必须指定对应 `accountRef`；用户在页面下拉选择账号只改变自己的视图，不更改模型调用或其他窗口。无法确定引用时请用户在插件页面选择并确认对应账号，不能凭最近使用记录猜测。
+search_shops 用 scope: nearby 查询首批附近推荐，recent 查询最近订单店铺；keyword 仅筛选本批，不是全平台搜索。get_menu 使用返回的稳定 shopId，读取当前菜品、标价和库存。标价不是结算实付。推荐完成后调用 show_order，传真实 itemIds 和用户预算 maxAmount，让用户直接在会话卡片选规格、加购和结算，不要求跳到插件页完成点餐。
 
-`prepare_ordering` 复核指定账号和已选地址，仅返回脱敏状态。`search_shops` 支持 `platformId`、`accountRef`、`scope` 和 `keyword`。先在插件页选择有效配送地址；`scope` 默认 `nearby`，查询当前地址的首批附近推荐，`recent` 查询最近一页订单店铺。关键词仅筛选本批店铺，不能声称搜索了平台所有商家。`get_menu` 需要 `platformId`、`accountRef` 和返回的稳定 `shopId`。返回菜品分类、标价、售罄状态和只读选项，标价不是实付金额。要求人工验证时停止，让用户在官方窗口完成，不代做验证或制造验证令牌。
+用户明确要求加购时，先 get_cart 获取 revision。多规格商品先 get_item_options，根据用户选择使用 selectionRef、variantRef、choiceRefs、quantity；缺选择时用卡片让用户操作，不猜测必选口味。change_cart 的 step: 1 加指定 itemId，step: -1 减指定 lineRef；不清空或替换已有购物车。操作结果不明时 get_cart 核对，不重试修改。复杂组合套餐或不支持的配料规则停止并显示原因。
 
-`preview_checkout` 要求 `platformId: "taobao"`、`accountRef` 和稳定 `shopId`，读取已经存在的购物车实时报价，金额单位为分；不加购、不创建订单，不返回地址和私人支付链接。模型 `submit_order` 和 `request_payment` 仍禁止购买。用户可在插件页加购、结算、关闭预览并明确确认下单，再在官方支付入口付款。HTTP 200、有效报价或支付链接都不代表已下单或已支付，不重试结果未确认的购买。
+用户要求下单时，submit_order 传 accountRef、shopId、maxAmount（元），读取真实结算实付并展示确认卡片；预算只会收紧配置单笔上限。工具调用本身不创建订单或扣款。用户在会话中核对餐品、地址、配送时间、优惠和实付，勾选确认后点击创建；全局自动任务预览无需关闭。preview_checkout 可只读获取当前购物车报价，金额字段单位为分；有效报价不能当作已下单。
 
-当前没有全量商家搜索、跨平台比价、自动购买或自动领券。闪购购物车与真实报价已验证，复杂规格需在官方客户端先加购；订单创建和付款仍需用户完成实单验收。不要把盒马只读购物车解释为盒马可以购买，也不用菜单标价或示例数据代替平台结算。
+创建成功后用 request_payment 展示本机订单对应的官方付款入口，用户在官方收银台完成付款。付款 URL 由私人鉴权界面读取，不进入模型。get_order_status 用 accountRef 和可选 orderRef 查询本机记录及对应官方状态；HTTP 200、支付入口或本机 paymentStatus: unconfirmed 不能声称已付款。订单结果未知时先核对官方订单，保留尝试与预算占用，不重复提交。平台要求额外验证时由用户在官方窗口完成。
+
+盒马支持商品搜索、规格与只读购物车，不能购买；不将菜单标价、示例数据或其他账号订单代替当前真实结算。真实创建与付款尚未实单验收，能力实现与购买成功分别报告。

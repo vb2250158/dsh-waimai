@@ -242,3 +242,15 @@ test('removed zero-quantity lines disappear and specification changes invalidate
   const reduced = cartData(raw, 'store-17'); assert.equal(reduced.lines.length, 1); assert.equal(reduced.display.quantity, 1)
   raw.total_quantity = 2; assert.throws(() => cartData(raw, 'store-17'))
 })
+
+test('private manual confirmation can submit during automation preview but stays bounded by the quote and requested budget', async () => {
+  for (const limit of [2000, 2500]) {
+    const f = await fixture({ dryRun: true })
+    try {
+      const quote = await getQuote(f), args = { ...submitArgs(quote), manualConfirmation: true, maxAmountCents: limit }
+      if (limit < quote.totalCents) { await assert.rejects(f.trade.submit(args), error => error.code === 'over-cap'); assert(!f.calls.some(c => c.api === 'submit')) }
+      else { const result = await f.trade.submit(args); assert.equal(result.paymentStatus, 'unconfirmed'); assert.equal(f.calls.filter(c => c.api === 'submit').length, 1) }
+      assert.equal(f.trade.dryRun, true)
+    } finally { await f.close() }
+  }
+})

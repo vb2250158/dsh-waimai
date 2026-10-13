@@ -2,9 +2,8 @@
  * Integration test for the takeaway MCP server.
  *
  * Starts the real server over stdio and inspects its advertised tools. This
- * proves the process boots, the SDK wiring is correct, and — most importantly —
- * that `request_payment` exposes no parameters, which is the property that
- * stops a model from choosing the merchant or the amount.
+ * checks process startup, tool registration and account-scoped payment inputs.
+ * Payment requests identify existing local orders and never accept a charge amount.
  *
  * The test never launches a browser: `tools/list` is answered before any tool
  * call, so no window opens and no page is loaded.
@@ -55,7 +54,12 @@ const EXPECTED_TOOLS = [
   'get_menu',
   'get_product_details',
   'preview_checkout',
+  'get_cart',
+  'get_item_options',
+  'change_cart',
+  'show_order',
   'submit_order',
+  'get_order_status',
   'request_payment',
 ]
 
@@ -91,14 +95,14 @@ test('the server advertises every takeaway tool', async () => {
   }
 })
 
-test('request_payment exposes no parameters', async () => {
+test('request_payment accepts only account and order references, without caller-selected payment amount', async () => {
   const { client, close } = await connect({ PAYMENT_MODE: 'auto', MAX_ORDER_AMOUNT: '35' })
   try {
     const { tools } = await client.listTools()
     const payment = tools.find(tool => tool.name === 'request_payment')
     assert.ok(payment !== undefined)
     const properties = payment.inputSchema?.properties ?? {}
-    assert.deepEqual(Object.keys(properties), [],
+    assert.deepEqual(Object.keys(properties), ['platformId', 'accountRef', 'orderRef'],
       'request_payment must not accept an amount or merchant from the caller')
   } finally {
     await close()
@@ -113,38 +117,29 @@ test('HTTP tools require a stable merchant and expose platform selection', async
     assert.deepEqual(menu.inputSchema.required, ['shopId'])
 
     const submit = tools.find(tool => tool.name === 'submit_order')
-    assert.deepEqual(Object.keys(submit.inputSchema.properties ?? {}), ['platformId', 'quoteId', 'maxAmount'])
-    assert.equal(submit.inputSchema.required, undefined)
+    assert.deepEqual(Object.keys(submit.inputSchema.properties ?? {}), ['platformId', 'accountRef', 'shopId', 'maxAmount'])
+    assert.deepEqual(submit.inputSchema.required, ['accountRef', 'shopId', 'maxAmount'])
   } finally {
     await close()
   }
 })
 
-test('preview mode blocks checkout and payment before launching a browser', async () => {
+test('preview status exposes interactive ordering without automatic payment', async () => {
   const { client, close } = await connect({ DRY_RUN: 'true', PAYMENT_MODE: 'auto' })
   try {
-    for (const name of ['submit_order', 'request_payment']) {
-      const result = await client.callTool({ name, arguments: {} })
-      const value = JSON.parse(result.content[0].text)
-      assert.equal(value.success, false)
-      assert.match(value.error, /预览模式/)
-    }
-    const result = await client.callTool({ name: 'get_status', arguments: {} })
-    const value = JSON.parse(result.content[0].text)
-    assert.equal(value.data.transport, 'http')
-    assert.equal(value.data.dryRun, true)
-    assert.equal(value.data.capabilities.createOrder, false)
+    const value = JSON.parse((await client.callTool({ name: 'get_status', arguments: {} })).content[0].text)
+    assert.equal(value.data.dryRun, true); assert.equal(value.data.orderingAvailable, true)
+    assert.equal(value.data.automaticPaymentAvailable, false); assert.equal(value.data.paymentMode, 'official-cashier')
+    const { tools } = await client.listTools()
+    const submit = tools.find(tool => tool.name === 'submit_order')
+    assert.match(submit.description, /不创建订单或扣款/)
+    assert(!('confirmed' in submit.inputSchema.properties))
   } finally { await close() }
 })
 
-test('unverified purchasing and unavailable platforms stop even with preview disabled', async () => {
+test('unavailable platforms cannot use private account actions', async () => {
   const { client, close } = await connect({ DRY_RUN: 'false' })
   try {
-    for (const name of ['submit_order', 'request_payment']) {
-      const value = JSON.parse((await client.callTool({ name, arguments: {} })).content[0].text)
-      assert.equal(value.success, false)
-      assert.equal(value.code, 'ordering-unverified')
-    }
     for (const platformId of ['meituan', 'jd', 'unknown']) {
       const value = JSON.parse((await client.callTool({ name: 'account_profile', arguments: { platformId } })).content[0].text)
       assert.equal(value.code, platformId === 'unknown' ? 'unknown-platform' : 'not-integrated')

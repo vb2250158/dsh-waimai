@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0 — 2026-10-13
+
+- Agent 会话新增店铺、菜单、推荐餐品、购物车、报价确认和付款工具卡片；用户在会话中选规格、加购、结算并确认下单。
+- 新增购物车、规格、推荐展示和订单状态工具；submit_order 改为真实报价确认卡片，request_payment 改为官方支付入口卡片。
+- 手动确认下单无需关闭自动任务预览；服务端继续限制单笔、每日及本次预算，检查报价有效期、身份和购物车版本，防止重复提交。付款仍由用户在官方收银台完成。
+- 增加下单脱敏阶段日志及会话卡片回放、私有确认与预算测试；未执行真实订单创建或扣款。
+- Agent chat now provides actionable recommendation, cart, quote and payment cards. Manual confirmation can place an order during automation preview; payment stays in the official cashier. Public tool schemas changed; see MIGRATION-0.3.0.md.
+
 ## 0.2.20 — 2026-10-12
 
 - 加购立即显示等待状态并防重复点击；回读确认目标 SKU、口味、配料和数量后才显示成功反馈。失败显示原因与刷新入口，新增脱敏加购日志。
