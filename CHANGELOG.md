@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.2 — 2026-10-13
+
+- 会话菜单卡片按商品身份去重，避免平台多个分类重复列出同一餐品。
+- Conversation menu cards deduplicate dishes by their stable item identity.
+
 ## 0.3.1 — 2026-10-13
 
 - 菜单和点餐准备结果统一报告用户确认下单可用、自动购买不可用，避免旧能力标记误导 Agent。

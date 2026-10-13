@@ -9,6 +9,9 @@ import { Config } from '../lib/index.js'
 
 test('a recorded menu tool renders actionable dishes and keeps private ordering scoped to its recorded account', async () => {
   const recorded = JSON.parse(await readFile(new URL('./fixtures/agent-order-card.json', import.meta.url), 'utf8'))
+  const duplicateMenu = JSON.parse(recorded.props.block.content[0].text)
+  duplicateMenu.data.categories.push(duplicateMenu.data.categories[0])
+  recorded.props.block.content[0].text = JSON.stringify(duplicateMenu)
   const accountRef = '11111111-1111-4111-8111-111111111111', addressRef = 'a'.repeat(64), calls = []
   const item = { id: 'food-1', name: '示例饭', price: '20', imageUrl: null, description: '', availability: 'available', options: [], tips: [] }
   const menu = { platformId: 'taobao', shopId: 'store-17', categories: [{ id: 'main', name: '主食', items: [item] }] }
@@ -21,6 +24,7 @@ test('a recorded menu tool renders actionable dishes and keeps private ordering 
     addresses: async payload => { calls.push({ method: 'addresses', payload }); return ok({ accountId: profile.id, selectedRef: addressRef, addresses: [{ ref: addressRef, address: '示例地址', contact: '', maskedPhone: '', usable: true }] }) } })
   try {
     assert(text(mounted.renderer.toJSON()).includes(recorded.expected.dish))
+    assert.equal(mounted.renderer.root.findAllByType('button').filter(node => text(node.props.children) === recorded.expected.action).length, 1)
     const button = mounted.renderer.root.findAllByType('button').find(node => text(node.props.children) === recorded.expected.action)
     assert.equal(button.props.disabled, false)
     await act(async () => button.props.onClick()); await act(async () => {})
