@@ -59,6 +59,8 @@ DeepSeek Harness 多平台外卖插件。淘宝闪购和盒马通过 HTTP 读取
 
 ## Agent 会话点餐
 
+菜单和点餐准备结果中的 `orderingAvailable` 表示用户确认下单可用；`automaticOrderingAvailable: false` 表示自动购买不可用，`userConfirmationRequired: true` 要求明确用户确认。
+
 会话中的店铺、菜单、推荐餐品、购物车、报价和付款工具结果使用公开 `tool.call.toolview` 展示卡片。点击店铺或餐品可在当前会话中选择规格、配料和数量、加购、减一件与结算；插件页面继续使用悬浮购物车，会话卡片使用内嵌购物车。卡片绑定记录中的 `accountRef`，不会随其他窗口切换账号。地址和付款 URL 只通过鉴权 RPC 读取，不写入模型结果。
 
 Agent 推荐时调用 `show_order`，只能使用当前菜单中的真实 `itemIds`。获得购物车 revision 后可调用 `get_item_options`、`change_cart`，再用 `submit_order` 请求真实报价。报价卡片重新读取当前购物车和报价，展示有效期、费用、优惠、配送地址和实付；预算超限、过期、身份或购物车变化阻止提交。用户确认后显示订单和官方付款入口；付款后刷新官方状态。请求成功或打开链接都不能当作已付款。迁移见 [0.3.0 说明](MIGRATION-0.3.0.md)。

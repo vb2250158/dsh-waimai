@@ -8,5 +8,7 @@
     ]
   }],
   "priceUnit": "CNY",
-  "orderingAvailable": false
+  "orderingAvailable": true,
+  "automaticOrderingAvailable": false,
+  "userConfirmationRequired": true
 }

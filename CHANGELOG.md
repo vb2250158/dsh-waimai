@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1 — 2026-10-13
+
+- 菜单和点餐准备结果统一报告用户确认下单可用、自动购买不可用，避免旧能力标记误导 Agent。
+- Menu and ordering preparation report interactive ordering separately from automated purchasing.
+
 ## 0.3.0 — 2026-10-13
 
 - Agent 会话新增店铺、菜单、推荐餐品、购物车、报价确认和付款工具卡片；用户在会话中选规格、加购、结算并确认下单。

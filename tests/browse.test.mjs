@@ -15,7 +15,8 @@ test('menu display includes folded and sold-out items, options and listed prices
   assert.equal(result.categories[0].items.length, 2)
   const [food, soup] = result.categories[0].items
   assert.equal(food.price, '20.50'); assert.equal(food.options[0].values[1].available, false)
-  assert.equal(soup.availability, 'sold-out'); assert.equal(result.orderingAvailable, false)
+  assert.equal(soup.availability, 'sold-out'); assert.equal(result.orderingAvailable, true)
+  assert.equal(result.automaticOrderingAvailable, false); assert.equal(result.userConfirmationRequired, true)
   for (const secret of ['private-order', 'private-tracking', 'private-action', 'useCouponPrice']) assert(!JSON.stringify(result).includes(secret))
 })
 

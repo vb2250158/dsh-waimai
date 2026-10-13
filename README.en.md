@@ -4,6 +4,8 @@ A DeepSeek Harness plugin for Taobao Instant Commerce and read-only Hema browsin
 
 ## Agent ordering
 
+Menu and preparation results use orderingAvailable for interactive ordering, automaticOrderingAvailable: false for disabled automated purchasing, and userConfirmationRequired: true for explicit confirmation.
+
 The public tool.call.toolview slot renders shops, menu recommendations, carts, checkout confirmations and payment handoffs inside the conversation. show_order uses real menu itemIds and an optional budget. Users can choose variants, required extras and quantity, add items, remove one unit and request a quote inside the card. Plugin pages retain their floating cart; chat cards use an inline cart.
 
 Agents can read get_cart and get_item_options, then change_cart with the current revision and validated selection references. Cart changes do not create orders. submit_order requires accountRef, shopId and maxAmount in yuan; it reads the real checkout total and returns a user confirmation card. The card refreshes the quote and checks the account, selected address, cart revision, expiry and budget before submitting. An explicit user confirmation can place a manual order while automation preview stays enabled. Scheduled purchasing remains disabled.
