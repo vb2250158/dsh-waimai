@@ -145,7 +145,12 @@ test('Hema view uses explicit Taobao sign-in, private account scope and remote p
     const click = label => root.findAllByType('button').find(button => text(button.props.children) === label).props.onClick()
     await act(async () => root.findAll(node => node.type === 'span' && node.props.className === 'waimai-choice')[0].props.onSelect('hema'))
     assert(!root.findAllByType('button').some(button => text(button.props.children) === '手机号短信'))
-    const loginMethods = ['淘宝扫码', '使用已登录淘宝账号'].filter(label => root.findAllByType('button').some(button => text(button.props.children) === label))
+    const loginMethods = ['盒马 App 扫码', '淘宝授权扫码', '使用淘宝账号'].filter(label => root.findAllByType('button').some(button => text(button.props.children) === label))
+    assert.equal(loginMethods.length, 3)
+    assert(text(mounted.renderer.toJSON()).includes('盒马 App 扫码尚未接通'))
+    assert(root.findAllByType('button').find(button => text(button.props.children) === '盒马 App 扫码').props['aria-pressed'])
+    assert(!calls.some(value => value.endpoint === 'qrStart' && value.payload.platformId === 'hema'))
+    await act(async () => click('使用淘宝账号'))
     await act(async () => click('使用已登录淘宝账号'))
     assert(text(mounted.renderer.toJSON()).includes('示例盒马用户'))
     await act(async () => click('门店与商品'))
@@ -430,7 +435,7 @@ test('opening QR sign-in creates the code and automatically completes business v
 
 test('account labels keep IDs in details and dropdown changes scope orders to the chosen account', async () => {
   const first = '11111111-1111-4111-8111-111111111111', second = '22222222-2222-4222-8222-222222222222'
-  const calls = [], accounts = [{ ref: first, externalId: profile.id, nickname: profile.nickname }, { ref: second, externalId: '67890', nickname: '第二账号' }]
+  const calls = [], accounts = [{ ref: first, externalId: profile.id, nickname: profile.nickname, loginMethod: 'sms' }, { ref: second, externalId: '67890', nickname: '第二账号', loginMethod: 'sms' }]
   const rpc = { async call(_channel, endpoint, payload) {
     calls.push({ endpoint, payload })
     const ref = payload.accountRef || first

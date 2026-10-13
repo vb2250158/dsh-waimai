@@ -2,7 +2,9 @@
 
 A DeepSeek Harness plugin for Taobao Instant Commerce and read-only Hema browsing. Sign-in, addresses, menus, cart and checkout use account-scoped HTTP interfaces. Meituan and JD are not integrated; Hema purchasing is disabled.
 
-QR accounts show the Taobao display nickname from the same authenticated session. Account IDs remain in account details; an absent nickname uses the unnamed-account label. Both the Taobao identity and ordering identity are checked around the read; changed identities stop profile display.
+QR accounts show the Taobao display nickname and self portrait from the same authenticated session. A portrait with another native nickname is rejected. Missing or failed portraits use the nickname initial with a refresh notice. Account IDs remain in account details; an absent nickname uses the unnamed-account label. Both the Taobao identity and ordering identity are checked around the read; changed identities stop profile display.
+
+Each platform declares its login methods and default entry. Taobao provides QR and SMS. Hema separates its app QR entry, Taobao authorization QR and explicit reuse of a signed-in Taobao account. Hema app QR is not connected: the platform rejected the current desktop request. Selecting it never starts a Taobao QR attempt or replaces an account. Hema native SMS remains unverified and does not send codes. Plugin defaults do not claim verified official recommendations.
 
 ## Agent ordering
 

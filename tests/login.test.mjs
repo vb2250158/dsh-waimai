@@ -23,6 +23,7 @@ async function fixture(options = {}) {
       calls.push({ method: 'GET', url })
       if (url.includes('/h5/mtop.user.getusersimple/')) return { ...response({}), json: async () => ({ ret: ['SUCCESS::synthetic'],
         data: options.taobaoProfile?.(++identityReads) || { userNumId: '87654', displayNick: '淘宝昵称', nick: '淘宝账户名' } }) }
+      if (url.includes('/h5/mtop.taobao.cus.tb.user.source.get/')) return { ...response({}), json: async () => options.portrait || ({ ret: ['SUCCESS::synthetic'], data: { model: { userNick: '淘宝账户名', userLogo: 'https://img.alicdn.com/taobao-avatar.jpg' } } }) }
       if (url.startsWith(protocol.profileUrl)) return { ...response({}), json: async () => options.profile || { user_id: '12345', username: '示例用户', mobile: phone, avatar: 'a'.repeat(32) + 'png', balance: 'private-balance' } }
       if (url.includes('/h5/mtop.alsc.order.fulfillment.queryorderlist/')) {
         const request = JSON.parse(new URL(url).searchParams.get('data'))
@@ -71,8 +72,17 @@ test('QR account shows the Taobao display nickname while retaining its distinct 
   const f = await fixture({ authenticated: true, profile: { user_id: '12345', username: 'opaque-user' } })
   try {
     await f.login.init(); f.login.loginMethod = 'taobao-qr'
-    assert.deepEqual(await f.login.profile(), { id: '12345', nickname: '淘宝昵称', maskedPhone: null, avatarUrl: null })
+    assert.deepEqual(await f.login.profile(), { id: '12345', nickname: '淘宝昵称', maskedPhone: null, avatarUrl: 'https://img.alicdn.com/taobao-avatar.jpg' })
     assert.equal(f.calls.filter(call => call.url.includes('getusersimple/')).length, 2)
+  } finally { await f.close() }
+})
+
+test('an unavailable or foreign portrait keeps the verified nickname and never displays the ordering default avatar', async () => {
+  const f = await fixture({ authenticated: true, portrait: { ret: ['SUCCESS::synthetic'], data: { model: { userNick: 'foreign-user', userLogo: 'https://img.alicdn.com/foreign.jpg' } } } })
+  try {
+    await f.login.init(); f.login.loginMethod = 'taobao-qr'
+    const value = await f.login.profile()
+    assert.equal(value.nickname, '淘宝昵称'); assert.equal(value.avatarUrl, null); assert.equal(value.avatarUnavailable, true)
   } finally { await f.close() }
 })
 

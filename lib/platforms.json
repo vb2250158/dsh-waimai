@@ -6,6 +6,11 @@
       "en": "Taobao Instant Commerce"
     },
     "adapter": "taobao",
+    "defaultLoginMethod": "taobao-qr",
+    "loginMethods": [
+      { "id": "taobao-qr", "kind": "qr", "available": true },
+      { "id": "sms", "kind": "sms", "available": true }
+    ],
     "capabilities": {
       "login": true,
       "profile": true,
@@ -31,6 +36,12 @@
       "en": "Hema"
     },
     "adapter": "hema",
+    "defaultLoginMethod": "hema-qr",
+    "loginMethods": [
+      { "id": "hema-qr", "kind": "qr", "available": false },
+      { "id": "taobao-qr", "kind": "qr", "available": true },
+      { "id": "taobao-account", "kind": "reuse", "available": true }
+    ],
     "capabilities": {
       "login": true,
       "profile": true,
@@ -48,6 +59,8 @@
   },
   {
     "id": "meituan",
+    "defaultLoginMethod": null,
+    "loginMethods": [],
     "names": {
       "zh": "美团外卖",
       "en": "Meituan Waimai"
@@ -70,6 +83,8 @@
   },
   {
     "id": "jd",
+    "defaultLoginMethod": null,
+    "loginMethods": [],
     "names": {
       "zh": "京东外卖",
       "en": "JD Food Delivery"

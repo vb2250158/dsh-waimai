@@ -303,6 +303,8 @@ test('account pool chooses a Hema adapter, refuses unsupported SMS and foreign s
     loginOptions: { persistLogin: true, createContext: f.createContext } })
   try {
     await pool.init()
+    await assert.rejects(pool.dispatch('qrStart', { platformId: 'hema', loginMethod: 'hema-qr' }), error => error.code === 'login-method-unavailable')
+    assert.equal(pool.sessions.size, 0)
     await assert.rejects(pool.dispatch('sendCode', { platformId: 'hema', phone: '13800000000' }), error => error.code === 'login-method-unavailable')
     assert.equal(pool.sessions.size, 0)
     await assert.rejects(pool.dispatch('useTaobao', { platformId: 'hema', sourceAccountRef: '11111111-1111-4111-8111-111111111111' }), error => error.code === 'account-missing')

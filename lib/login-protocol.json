@@ -135,6 +135,13 @@
       "x-ele-ua": "RenderWay/H5 MiniAppVersion/12.0.2 AppName/Web H5Version/12.0.2 channel/mobile subChannel/mobile.default"
     }
   },
+  "taobaoPortrait": {
+    "url": "https://h5api.m.taobao.com/h5/mtop.taobao.cus.tb.user.source.get/1.0/",
+    "api": "mtop.taobao.cus.tb.user.source.get",
+    "version": "1.0",
+    "appKey": "12574478",
+    "jsv": "2.7.2"
+  },
   "taobaoIdentity": {
     "url": "https://h5api.m.taobao.com/h5/mtop.user.getusersimple/1.0/",
     "api": "mtop.user.getUserSimple",

@@ -6,7 +6,8 @@ import { join } from 'node:path'
 import { AccountPool } from '../lib/account-pool.js'
 import { writeJsonState } from '../lib/automation.js'
 
-const definitions = [{ id: 'taobao', adapter: 'taobao' }, { id: 'meituan', adapter: null }, { id: 'jd', adapter: null }]
+const definitions = [{ id: 'taobao', adapter: 'taobao', loginMethods: [{ id: 'taobao-qr', kind: 'qr', available: true }, { id: 'sms', kind: 'sms', available: true }] },
+  { id: 'meituan', adapter: null, loginMethods: [] }, { id: 'jd', adapter: null, loginMethods: [] }]
 const avatarUrl = 'https://cube.elemecdn.com/a/aa/' + 'a'.repeat(29) + 'png.png'
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), 'waimai-accounts-')), jars = []
