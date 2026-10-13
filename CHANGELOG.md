@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.2 — 2026-10-13
+
+- 淘宝扫码账号显示淘宝昵称，账号选择器移除编号，昵称为空时显示未命名账号；读取前后核验淘宝和闪购身份。
+- QR accounts display the Taobao nickname, selectors omit account IDs, and absent nicknames use the unnamed-account label. Profile reads verify both identities.
+
 ## 0.4.1 — 2026-10-13
 
 - 店铺分页查询沿用插件配置的默认平台；商品查询仍明确限定淘宝闪购，不把盒马默认设置改为淘宝。

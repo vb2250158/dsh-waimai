@@ -428,7 +428,7 @@ test('opening QR sign-in creates the code and automatically completes business v
   } finally { mounted.close() }
 })
 
-test('account dropdown changes only the current view and scopes orders to the chosen account', async () => {
+test('account labels keep IDs in details and dropdown changes scope orders to the chosen account', async () => {
   const first = '11111111-1111-4111-8111-111111111111', second = '22222222-2222-4222-8222-222222222222'
   const calls = [], accounts = [{ ref: first, externalId: profile.id, nickname: profile.nickname }, { ref: second, externalId: '67890', nickname: '第二账号' }]
   const rpc = { async call(_channel, endpoint, payload) {
@@ -442,6 +442,7 @@ test('account dropdown changes only the current view and scopes orders to the ch
   try {
     const selector = a.renderer.root.findAll(node => node.props.selectedId === first && Array.isArray(node.props.items)).find(node => node.type === 'span')
     assert.deepEqual(JSON.parse(JSON.stringify(selector.props.items)), JSON.parse(await readFile(new URL('./fixtures/account-selector.json', import.meta.url), 'utf8')))
+    assert(selector.props.items.every(item => !/12345|67890/.test(item.label)))
     await act(async () => selector.props.onSelect(second))
     assert(text(a.renderer.toJSON()).includes('第二账号'))
     assert(text(b.renderer.toJSON()).includes('账号 ID: 12345'))

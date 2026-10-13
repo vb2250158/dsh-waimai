@@ -2,6 +2,8 @@
 
 A DeepSeek Harness plugin for Taobao Instant Commerce and read-only Hema browsing. Sign-in, addresses, menus, cart and checkout use account-scoped HTTP interfaces. Meituan and JD are not integrated; Hema purchasing is disabled.
 
+QR accounts show the Taobao display nickname from the same authenticated session. Account IDs remain in account details; an absent nickname uses the unnamed-account label. Both the Taobao identity and ordering identity are checked around the read; changed identities stop profile display.
+
 ## Agent ordering
 
 search_shops returns an opaque nextCursor for nearby merchant pages, including pages with no keyword matches. Positions are bound to the account, query, scope and native delivery selection; reloads, expiry or eviction require restarting from the first page. Advanced settings expose browseCursorSeconds and browseCursorLimit.

@@ -16,11 +16,13 @@ const response = body => ({ ok: () => true, status: () => 200, headers: () => ({
 async function fixture(options = {}) {
   const dir = await mkdtemp(join(tmpdir(), 'waimai-login-test-'))
   const calls = []
-  let loggedIn = options.authenticated === true, generation = 0
+  let loggedIn = options.authenticated === true, generation = 0, identityReads = 0
   const cookies = [{ name: 'synthetic-session', value: 'synthetic-cookie-secret', domain: 'ipassport.ele.me', path: '/', expires: -1, httpOnly: true, secure: true, sameSite: 'Lax' }]
   const http = {
     get: async url => {
       calls.push({ method: 'GET', url })
+      if (url.includes('/h5/mtop.user.getusersimple/')) return { ...response({}), json: async () => ({ ret: ['SUCCESS::synthetic'],
+        data: options.taobaoProfile?.(++identityReads) || { userNumId: '87654', displayNick: '淘宝昵称', nick: '淘宝账户名' } }) }
       if (url.startsWith(protocol.profileUrl)) return { ...response({}), json: async () => options.profile || { user_id: '12345', username: '示例用户', mobile: phone, avatar: 'a'.repeat(32) + 'png', balance: 'private-balance' } }
       if (url.includes('/h5/mtop.alsc.order.fulfillment.queryorderlist/')) {
         const request = JSON.parse(new URL(url).searchParams.get('data'))
@@ -63,6 +65,23 @@ test('bootstrap reads JSON without executing scripts and accepts braces within J
   assert.deepEqual(assignedJson('window.viewData = {"text":"x } \\" {", "n":{}};', 'viewData'), { text: 'x } " {', n: {} })
   assert.throws(() => assignedJson('window.viewData = {run: alert(1)};', 'viewData'))
   assert.throws(() => assignedJson('window.viewData = {"x":', 'viewData'))
+})
+
+test('QR account shows the Taobao display nickname while retaining its distinct ordering identity', async () => {
+  const f = await fixture({ authenticated: true, profile: { user_id: '12345', username: 'opaque-user' } })
+  try {
+    await f.login.init(); f.login.loginMethod = 'taobao-qr'
+    assert.deepEqual(await f.login.profile(), { id: '12345', nickname: '淘宝昵称', maskedPhone: null, avatarUrl: null })
+    assert.equal(f.calls.filter(call => call.url.includes('getusersimple/')).length, 2)
+  } finally { await f.close() }
+})
+
+test('QR nickname reads reject a changed Taobao identity and never substitute the generated ordering username', async () => {
+  const f = await fixture({ authenticated: true, taobaoProfile: count => ({ userNumId: count === 1 ? '87654' : '87655', nick: '另一个昵称' }) })
+  try {
+    await f.login.init(); f.login.loginMethod = 'taobao-qr'
+    await assert.rejects(f.login.profile(), error => !error.message.includes('另一个昵称') && /无法读取/.test(error.message))
+  } finally { await f.close() }
 })
 
 test('login URLs reject unrelated hosts, credentials, cleartext and unexpected ports', () => {

@@ -28,6 +28,7 @@ async function fixture(options = {}) {
         codeContent: options.codeContent || 'https://login.m.taobao.com/qrcodeCheck.htm?token=synthetic-code' } } })
       if (url.includes('/mini_login.htm')) return response(elePage, 'https://ipassport.ele.me/mini_login.htm')
       if (url.includes('mtop.alsc.user.session.ele.check/')) return response({ ret: ['SUCCESS::synthetic'], data: { value: options.linked || businessActive ? { localId: '12345', havanaId: options.foreignHavana ? '99999' : '54321' } : {} } })
+      if (url.includes('mtop.user.getusersimple/')) return response({ ret: ['SUCCESS::synthetic'], data: { userNumId: '87654', displayNick: '示例淘宝昵称' } })
       if (url.includes('/eus/v3/users/')) return response({ user_id: options.foreignProfile ? '999' : '12345', username: '示例淘宝授权用户', mobile: null })
       if (url.includes('fulfillment.queryorderlist/')) return response({ ret: ['SUCCESS::synthetic'], data: { result: { accountBindWrong: false, orderList: [], moreInfo: { hasMore: false } } } })
       return response({})

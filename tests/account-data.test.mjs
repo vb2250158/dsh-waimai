@@ -1,11 +1,20 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { profileData, avatarUrl, orderPage, OrderCursor } from '../lib/account-data.js'
+import { profileData, avatarUrl, orderPage, OrderCursor, taobaoDisplayProfile } from '../lib/account-data.js'
 
 const entry = { orderId: 'synthetic-order', storeName: '示例店', orderCreateTime: 1700000000000, orderAmount: '25.50',
   orderStatusBar: { title: '已完成' }, orderItemList: [{ name: '示例饭', count: 2, cover: 'untrusted-url' }], address: 'private-address', paymentAction: 'private-action' }
 const position = { pageNum: 0, fromTime: 0, lastBillMonth: '00' }
 const result = { orderList: [entry], moreInfo: { hasMore: true, moreInfoParams: { pageNum: 1, fromTime: 1700000000000, privateField: 'secret' } } }
+
+test('Taobao self-profile prefers the display nickname and keeps absent nicknames unnamed', () => {
+  const profile = data => taobaoDisplayProfile({ ret: ['SUCCESS::synthetic'], data: { userNumId: '87654', ...data } })
+  assert.deepEqual(profile({ displayNick: ' 昵称 ', nick: 'opaque-login-name', token: 'private' }), { id: '87654', nickname: '昵称' })
+  assert.equal(profile({ displayNick: ' ', nick: '账户昵称' }).nickname, '账户昵称')
+  assert.equal(profile({}).nickname, null)
+  assert.throws(() => taobaoDisplayProfile({ ret: ['FAIL_SYS_USER_NOT_LOGIN::synthetic'], data: { userNumId: '87654', nick: 'other' } }))
+  assert.throws(() => profile({ userNumId: 'not-an-id' }))
+})
 
 test('profile projection binds the account, masks phone and accepts only the platform avatar hash', () => {
   const user = profileData({ user_id: 12345, username: '示例用户', mobile: '13800000000', avatar: 'a'.repeat(32) + 'png', email: 'private' }, '12345')
