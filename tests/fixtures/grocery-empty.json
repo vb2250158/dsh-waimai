@@ -1,0 +1,11 @@
+{
+  "resultMap": {
+    "menu": null,
+    "bottom": {
+      "storeId": "store-17",
+      "type": 1,
+      "mainTitle": "暂无可售商品，请改天再来",
+      "userTrack": { "private": "tracking" }
+    }
+  }
+}

@@ -51,6 +51,7 @@ const EXPECTED_TOOLS = [
   'get_status',
   'prepare_ordering',
   'search_shops',
+  'search_products',
   'get_menu',
   'get_product_details',
   'preview_checkout',

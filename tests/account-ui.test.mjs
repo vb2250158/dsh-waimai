@@ -7,6 +7,28 @@ import React from 'react'
 import { create, act } from 'react-test-renderer'
 import { Config } from '../lib/index.js'
 
+test('recorded product queries retain identical items in different stores and open the selected merchant within the recorded account', async () => {
+  const fixture = JSON.parse(await readFile(new URL('./fixtures/agent-product-search.json', import.meta.url), 'utf8')), calls = [], addressRef = 'a'.repeat(64)
+  const mounted = await mount({ async call(_channel, method, payload) {
+    calls.push({ method, payload })
+    if (method === 'profile') return ok(profile)
+    if (method === 'probeMenu') return ok({ accountId: profile.id, addressRef, shopId: payload.shopId, categories: [] })
+    if (method === 'nearbyShops') return ok({ accountId: profile.id, addressRef, shops: [] })
+    throw Error('unexpected product card operation')
+  } }, { tool: { name: 'mcp__waimai__search_products', props: fixture },
+    addresses: async () => ok({ accountId: profile.id, selectedRef: addressRef, addresses: [{ ref: addressRef, address: '示例地址', usable: true }] }) })
+  try {
+    const value = text(mounted.renderer.toJSON())
+    assert(value.includes('仅查询已选店铺')); assert(value.includes('暂无可售商品，请改天再来')); assert(value.includes('商品读取失败'))
+    assert(!value.includes('market-a')); assert(!value.includes('failed'))
+    const buttons = mounted.renderer.root.findAllByType('button').filter(button => text(button.props.children) === '选规格并点餐')
+    assert.equal(buttons.length, 2); assert.equal(calls.length, 0)
+    await act(async () => buttons[1].props.onClick())
+    assert(calls.some(call => call.method === 'probeMenu' && call.payload.shopId === 'market-b'))
+    assert(calls.every(call => call.payload.accountRef === '11111111-1111-4111-8111-111111111111'))
+  } finally { mounted.close() }
+})
+
 test('a recorded menu tool renders actionable dishes and keeps private ordering scoped to its recorded account', async () => {
   const recorded = JSON.parse(await readFile(new URL('./fixtures/agent-order-card.json', import.meta.url), 'utf8'))
   const duplicateMenu = JSON.parse(recorded.props.block.content[0].text)

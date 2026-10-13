@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0 — 2026-10-13
+
+- Agent 店铺查询增加账号和地址绑定的匿名分页游标；新增指定店铺商品名称查询与会话卡片，保留整箱规格原文、标价、可售状态和读取失败信息。
+- 正确展示平台明确返回的空店/不可用提示，不再把商超「暂无可售商品」报成菜单解析失败。空结果限定当前店铺和查询页，不能解释为全平台缺货或最低价。
+- Agent browsing adds opaque merchant pagination and product-name queries within selected stores, with actionable conversation cards and explicit listed-price scope. Empty-store notices and failed reads remain distinct.
+
 ## 0.3.3 — 2026-10-13
 
 - 修复平台可选配料额度为 0 时整个餐品无法读取规格的问题；保留基础规格和口味，零额度配料禁选，矛盾默认项或必选规则继续阻止加购。

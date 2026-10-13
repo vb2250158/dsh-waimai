@@ -10,7 +10,11 @@ whenToUse: 用户希望点外卖、推荐餐品、下单或查看订单付款状
 
 list_connections 返回已保存的账号引用。每次账号工具明确传 accountRef；多个账号不能猜测。同一账号须 prepare_ordering 复核登录及所选配送地址。缺登录或地址时引导「插件 → dsh-waimai → 账号与地址」；不索取手机号、验证码、地址文本或 Cookie 到聊天。
 
-search_shops 用 scope: nearby 查询首批附近推荐，recent 查询最近订单店铺；keyword 仅筛选本批，不是全平台搜索。get_menu 使用返回的稳定 shopId，读取当前菜品、标价和库存。标价不是结算实付。推荐完成后调用 show_order，传真实 itemIds 和用户预算 maxAmount，让用户直接在会话卡片选规格、加购和结算，不要求跳到插件页完成点餐。
+search_shops 用 scope: nearby 分页查询附近推荐，recent 查询最近一页订单店铺；keyword 仅筛选当前页。无匹配而 nextCursor 非空时，保持账号、范围和关键词不变，用该游标继续查询；游标过期从第一页重新开始。分页不是全平台搜索，不把首批空结果解释为附近没有店铺。
+
+购买商超商品时，先分页发现店铺，再用 search_products 的 keyword 和真实 shopIds 查询最多十家已选店铺。结果明确限定 selected-stores-only，价格为标价；complete:false 表示部分店铺读取失败。menuState:empty/unavailable 和 notice 是平台状态，不是菜单解析失败或全平台缺货。整箱水必须核对商品名称和实际 SKU 的每瓶容量、瓶数和包装，不能把一瓶、组合购买或模糊规格当成一箱；无法证实规格时不加购。比较最低到手价须核对可售候选的实时报价和运费，未查询的店铺不得排除。
+
+get_menu 使用返回的稳定 shopId，读取当前菜品、标价和库存。标价不是结算实付。推荐完成后调用 show_order，传真实 itemIds 和用户预算 maxAmount，让用户直接在会话卡片选规格、加购和结算，不要求跳到插件页完成点餐。
 
 用户明确要求加购时，先 get_cart 获取 revision。多规格商品先 get_item_options，根据用户选择使用 selectionRef、variantRef、choiceRefs、quantity；缺选择时用卡片让用户操作，不猜测必选口味。change_cart 的 step: 1 加指定 itemId，step: -1 减指定 lineRef；不清空或替换已有购物车。操作结果不明时 get_cart 核对，不重试修改。复杂组合套餐或不支持的配料规则停止并显示原因。
 

@@ -4,6 +4,10 @@ A DeepSeek Harness plugin for Taobao Instant Commerce and read-only Hema browsin
 
 ## Agent ordering
 
+search_shops returns an opaque nextCursor for nearby merchant pages, including pages with no keyword matches. Positions are bound to the account, query, scope and native delivery selection; reloads, expiry or eviction require restarting from the first page. Advanced settings expose browseCursorSeconds and browseCursorLimit.
+
+search_products reads current menus in up to ten explicitly selected stores. Results retain product names, pack descriptions, listed prices and availability, and declare selected-stores-only scope. Failed stores remain visible with complete: false. Explicit platform empty-store responses display their notice; unexplained or malformed responses remain errors. A case of water requires verification of bottle capacity, bottle count and the actual SKU; listed prices cannot establish the lowest checkout total.
+
 Menu and preparation results use orderingAvailable for interactive ordering, automaticOrderingAvailable: false for disabled automated purchasing, and userConfirmationRequired: true for explicit confirmation.
 
 The public tool.call.toolview slot renders shops, menu recommendations, carts, checkout confirmations and payment handoffs inside the conversation. show_order uses real menu itemIds and an optional budget. Users can choose variants, required extras and quantity, add items, remove one unit and request a quote inside the card. Plugin pages retain their floating cart; chat cards use an inline cart.

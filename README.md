@@ -16,6 +16,10 @@ DeepSeek Harness 多平台外卖插件。淘宝闪购和盒马通过 HTTP 读取
 
 ## 当前能力
 
+Agent 的 `search_shops` 支持 `nextCursor` 分页；本页没有关键词匹配时仍返回下一页，不把空筛选结果解释为附近没有商超。游标在本机 MCP 进程保留，绑定账号、关键词、范围及原生地址分页，有效期和容量可在高级设置调整。重载或过期后从第一页重新查询。
+
+`search_products` 用商品名称查询最多十家已选店铺，返回商品原名、规格描述、标价和可售状态；查询范围明确为 `selected-stores-only`，不是全平台搜索。重复分类中的商品按店铺与商品身份去重；某店读取失败时结果标记 `complete:false`，不伪装成缺货。平台返回空菜单和明确状态时展示原提示，例如「暂无可售商品，请改天再来」；没有状态说明的异常空值仍报错误。购买整箱水时必须核对实际 SKU 的单瓶容量、瓶数和包装，价格比较以实时报价及配送费为准。
+
 | 平台 | 登录/账号 | 地址/历史 | 店铺/菜单 | 结算/创建订单/支付 |
 | --- | --- | --- | --- | --- |
 | 淘宝闪购 | HTTP 可用 | HTTP 可用 | 附近推荐分页、最近店铺、菜单与购物车 HTTP 可用 | 结算实测可用；确认下单与支付入口已实现，真实购买待用户验收 |
@@ -82,7 +86,7 @@ dsh plugin --profile web add --save-exact github:vb2250158/dsh-waimai#<40位提�
 
 ## 工具
 
-模型工具：`list_platforms`、`list_connections`、`get_status`、`prepare_ordering`、`search_shops`、`get_menu`、`get_product_details`、`get_item_options`、`get_cart`、`change_cart`、`show_order`、`preview_checkout`、`submit_order`、`request_payment`、`get_order_status` 和 Host 的 `preview_task`。`list_connections` 只返回平台和本机保存的账号引用，不返回昵称、手机号或凭据；每次使用仍复核会话。浏览器记住上次的平台和各平台账号，刷新或重新进入插件时复核后恢复；仅保存引用，不保存昵称、手机号或登录凭据。浏览器间不同步，清除站点数据后回到默认选择。已移除的账号回到可用默认账号，平台验证或临时查询失败不会改查其他账号。多个账号时，账号工具必须提供对应 `accountRef`，不会按当前页面的选择改变其他调用。`search_shops` 的 `scope` 默认 `nearby`，查询已选地址的首批附近推荐；`recent` 查询最近一页订单店铺，`keyword` 仅筛选本批结果，不能声称搜索平台全量商家。`get_menu` 要求返回的稳定 `shopId` 和该账号已选地址；盒马还须 `keyword`，后续页原样传回 `nextCursor`。`get_product_details` 用搜索结果的 `productRef` 读取盒马规格。模型结果不包含账号 ID、地址或私人平台分页令牌。淘宝点餐卡片支持用户确认提交；未接入平台返回结构化错误。原有调用迁移见 [0.2.5 迁移说明](MIGRATION-0.2.5.md)。
+模型工具：`list_platforms`、`list_connections`、`get_status`、`prepare_ordering`、`search_shops`、`search_products`、`get_menu`、`get_product_details`、`get_item_options`、`get_cart`、`change_cart`、`show_order`、`preview_checkout`、`submit_order`、`request_payment`、`get_order_status` 和 Host 的 `preview_task`。`list_connections` 只返回平台和本机保存的账号引用，不返回昵称、手机号或凭据；每次使用仍复核会话。浏览器记住上次的平台和各平台账号，刷新或重新进入插件时复核后恢复；仅保存引用，不保存昵称、手机号或登录凭据。浏览器间不同步，清除站点数据后回到默认选择。已移除的账号回到可用默认账号，平台验证或临时查询失败不会改查其他账号。多个账号时，账号工具必须提供对应 `accountRef`，不会按当前页面的选择改变其他调用。`search_shops` 的 `scope` 默认 `nearby`，分页查询已选地址的附近推荐；`recent` 查询最近一页订单店铺，`keyword` 仅筛选当前页结果，不能声称搜索平台全量商家。`get_menu` 要求返回的稳定 `shopId` 和该账号已选地址；盒马还须 `keyword`，后续页原样传回 `nextCursor`。`get_product_details` 用搜索结果的 `productRef` 读取盒马规格。模型结果不包含账号 ID、地址或私人平台分页令牌。淘宝点餐卡片支持用户确认提交；未接入平台返回结构化错误。原有调用迁移见 [0.2.5 迁移说明](MIGRATION-0.2.5.md)。
 
 短信、账号资料、地址、完整历史订单、确认提交与私人支付入口仅在鉴权的 `/waimai-login` RPC 可用，内部端点不注册给模型。模型购物车工具复用相同账号所有者，只返回商品、金额及版本。`preview_checkout` 要求淘宝平台、`accountRef` 和 `shopId`，返回不含地址或支付链接的报价；`submit_order` 用 `accountRef`、`shopId` 和 `maxAmount` 生成预算内的确认卡片；`request_payment` 和 `get_order_status` 用本机订单引用核对官方状态。实际创建需用户在卡片确认，官方付款入口从私人 RPC 读取，不进入模型结果。手机号、验证码、Cookie、地址和购物车摘要不写入共享配置；异常消息不返回网络 URL 或令牌。见 [0.2.16 升级说明](MIGRATION-0.2.16.md)。
 
@@ -100,6 +104,8 @@ dsh plugin --profile web add --save-exact github:vb2250158/dsh-waimai#<40位提�
 | `qrPollSeconds` | `2` | 扫码检查间隔秒，整数 2–15 |
 | `qrAuthorizationSeconds` | `60` | 手机确认后自动复核上限秒，整数 15–300 |
 | `browsePageSize` | `10` | 附近店铺每页数量，1–20 |
+| `browseCursorSeconds` | `600` | Agent 店铺分页有效期，整数 30–3600 秒 |
+| `browseCursorLimit` | `100` | Agent 保留的店铺分页引用数，整数 1–1000 |
 | `hemaProductPageSize` | `30` | 盒马商品查询每页数量，整数 1–50 |
 | `hideSponsoredShops` | `true` | 隐藏推广店铺；可在「点单设置」关闭，保存后保留广告标签展示，查询会等候接口重连完成 |
 | `checkoutQuoteSeconds` | `120` | 闪购报价有效期，整数 30–300 秒 |

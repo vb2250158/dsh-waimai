@@ -1,0 +1,14 @@
+{
+  "phase": "result",
+  "sessionId": "session-fixture",
+  "callId": "product-search-fixture",
+  "block": {
+    "call": { "argsRaw": "{\"platformId\":\"taobao\",\"accountRef\":\"11111111-1111-4111-8111-111111111111\",\"shopIds\":[\"market-a\",\"market-b\",\"empty\",\"failed\"],\"keyword\":\"百岁山\"}" },
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"success\":true,\"data\":{\"view\":\"product-search\",\"platformId\":\"taobao\",\"accountRef\":\"11111111-1111-4111-8111-111111111111\",\"scope\":\"selected-stores-only\",\"priceKind\":\"listed\",\"complete\":false,\"stores\":[{\"shopId\":\"market-a\",\"state\":\"matches\",\"items\":[{\"id\":\"water\",\"name\":\"百岁山570ml×24瓶整箱\",\"price\":\"59.9\",\"availability\":\"available\",\"tips\":[],\"options\":[]}]},{\"shopId\":\"market-b\",\"state\":\"matches\",\"items\":[{\"id\":\"water\",\"name\":\"百岁山570ml×24瓶整箱\",\"price\":\"60.0\",\"availability\":\"available\",\"tips\":[],\"options\":[]}]},{\"shopId\":\"empty\",\"state\":\"empty\",\"notice\":\"暂无可售商品，请改天再来\",\"items\":[]},{\"shopId\":\"failed\",\"state\":\"unreadable\",\"code\":\"menu-invalid\"}]}}"
+      }
+    ]
+  }
+}
