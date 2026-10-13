@@ -36,8 +36,9 @@
       "en": "Hema"
     },
     "adapter": "hema",
-    "defaultLoginMethod": "hema-qr",
+    "defaultLoginMethod": "taobao-sms",
     "loginMethods": [
+      { "id": "taobao-sms", "kind": "sms", "available": true },
       { "id": "hema-qr", "kind": "qr", "available": false },
       { "id": "taobao-qr", "kind": "qr", "available": true },
       { "id": "taobao-account", "kind": "reuse", "available": true }

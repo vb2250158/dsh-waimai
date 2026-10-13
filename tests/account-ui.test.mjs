@@ -145,8 +145,10 @@ test('Hema view uses explicit Taobao sign-in, private account scope and remote p
     const click = label => root.findAllByType('button').find(button => text(button.props.children) === label).props.onClick()
     await act(async () => root.findAll(node => node.type === 'span' && node.props.className === 'waimai-choice')[0].props.onSelect('hema'))
     assert(!root.findAllByType('button').some(button => text(button.props.children) === '手机号短信'))
-    const loginMethods = ['盒马 App 扫码', '淘宝授权扫码', '使用淘宝账号'].filter(label => root.findAllByType('button').some(button => text(button.props.children) === label))
-    assert.equal(loginMethods.length, 3)
+    const loginMethods = ['手机号短信（淘宝授权）', '盒马 App 扫码', '淘宝授权扫码', '使用淘宝账号'].filter(label => root.findAllByType('button').some(button => text(button.props.children) === label))
+    assert.equal(loginMethods.length, 4)
+    assert(root.findAllByType('button').find(button => text(button.props.children) === '手机号短信（淘宝授权）').props['aria-pressed'])
+    await act(async () => click('盒马 App 扫码'))
     assert(text(mounted.renderer.toJSON()).includes('盒马 App 扫码尚未接通'))
     assert(root.findAllByType('button').find(button => text(button.props.children) === '盒马 App 扫码').props['aria-pressed'])
     assert(!calls.some(value => value.endpoint === 'qrStart' && value.payload.platformId === 'hema'))
@@ -211,7 +213,7 @@ async function mount(rpc, options = {}) {
   const originalCall = rpc.call.bind(rpc)
   const platforms = JSON.parse(await readFile(new URL('../lib/platforms.json', import.meta.url), 'utf8'))
   rpc = { call(channel, endpoint, payload) {
-    if (endpoint === 'platforms') return Promise.resolve(ok(platforms))
+    if (endpoint === 'platforms') return options.platforms ? options.platforms() : Promise.resolve(ok(platforms))
     if (endpoint === 'addresses') return options.addresses ? options.addresses(payload) : Promise.resolve(ok({ accountId: profile.id, addresses: [], selectedRef: null }))
     if (payload.platformId === 'taobao' && ['cart', 'tradeHistory', 'itemOptions', 'cartChange', 'checkout', 'submit'].includes(endpoint)) {
       if (options.trade) return options.trade(endpoint, payload)
@@ -247,6 +249,46 @@ async function mount(rpc, options = {}) {
   await act(async () => { const selected = options.tool ? toolCards.get(options.tool.name) : { component: Card, props: cardProps }; renderer = create(React.createElement(selected.component, { ...selected.props, toolName: options.tool?.name, ...options.tool?.props })) })
   return { renderer, close: () => { act(() => renderer.unmount()); for (const dispose of disposers.reverse()) dispose?.() } }
 }
+
+test('stale platform metadata shows a retry and never starts a login with missing methods', async () => {
+  let ready = false; const calls = []
+  const definitions = JSON.parse(await readFile(new URL('../lib/platforms.json', import.meta.url), 'utf8'))
+  const mounted = await mount({ async call(_channel, endpoint) { calls.push(endpoint); return ok({ state: 'logged-out', authenticated: false }) } }, {
+    platforms: async () => ok(ready ? definitions : definitions.map(({ loginMethods: _methods, defaultLoginMethod: _default, ...entry }) => entry)) })
+  try {
+    assert(mounted.renderer.root.findAllByProps({ role: 'alert' }).some(node => node.type === 'p'))
+    assert.equal(calls.length, 0)
+    ready = true
+    await act(async () => mounted.renderer.root.findAllByType('button').find(button => text(button.props.children) === '重新加载平台').props.onClick())
+    assert(calls.includes('status')); assert(text(mounted.renderer.toJSON()).includes('淘宝扫码'))
+  } finally { mounted.close() }
+})
+
+test('Hema SMS stays in private RPC, defaults to phone authorization and displays the masked pending state', async () => {
+  const calls = []; let pending
+  const mounted = await mount({ async call(_channel, endpoint, payload) {
+    calls.push({ endpoint, payload })
+    if (endpoint === 'sendCode') { assert.equal(payload.loginMethod, 'taobao-sms'); pending = { state: 'code-sent', codePending: true, maskedPhone: '138****0000', retryAfterSeconds: 60, attemptId: '11111111-1111-4111-8111-111111111111' } }
+    if (endpoint === 'complete') { assert.equal(payload.loginMethod, 'taobao-sms'); assert.equal(payload.smsAttemptId, pending.attemptId); pending = { ...pending, state: 'registration-required' } }
+    return ok({ authenticated: false, state: 'logged-out', pendingLogin: pending, accounts: [] })
+  } })
+  try {
+    const root = mounted.renderer.root
+    await act(async () => root.findAll(node => node.type === 'span' && node.props.className === 'waimai-choice')[0].props.onSelect('hema'))
+    const phoneInput = root.findAll(node => node.type === 'span' && node.props.type === 'tel')[0]
+    await act(async () => phoneInput.props.onChange({ target: { value: '13800000000' } }))
+    await act(async () => root.findAllByType('button').find(button => text(button.props.children) === '获取验证码').props.onClick())
+    assert(text(mounted.renderer.toJSON()).includes('138****0000'))
+    const codeInput = root.findAll(node => node.type === 'span' && node.props.autoComplete === 'one-time-code')[0]
+    await act(async () => codeInput.props.onChange({ target: { value: '5678' } }))
+    await act(async () => root.findAllByType('button').find(button => text(button.props.children) === '登录').props.onClick())
+    assert(root.findAllByType('button').find(button => text(button.props.children) === '登录').props.disabled)
+    assert(!calls.some(call => call.endpoint === 'qrStart' && call.payload.platformId === 'hema'))
+    const recorded = { method: '手机号短信（淘宝授权）', pending: '138****0000', sends: calls.filter(call => call.endpoint === 'sendCode').length,
+      registrationStopped: root.findAllByType('button').find(button => text(button.props.children) === '登录').props.disabled }
+    assert.deepEqual(recorded, JSON.parse(await readFile(new URL('./fixtures/hema-sms-view.json', import.meta.url), 'utf8')))
+  } finally { mounted.close() }
+})
 
 test('Taobao cart shows an expiring server quote; creation requires explicit confirmation and payment is an official link', async () => {
   const addressRef = 'a'.repeat(64), ref = '11111111-1111-4111-8111-111111111111', calls = []
