@@ -14,6 +14,8 @@ Payment uses the official cashier page opened by the user. request_payment and g
 
 ## Installation and validation
 
+Optional ingredient groups with zero allowance keep base variants available and disable extras. Zero is never interpreted as unlimited. Contradictory defaults, required extras or quantity rules stop the operation.
+
 Install a fixed Git SHA through the managed DSH plugin installer. The package ships lib/ directly and has no build step. Run npm run check and npm test. Chinese documentation in README.md describes each configuration field, platform API and prior live validation. Migration guidance is in MIGRATION-0.3.0.md.
 
 maxOrderAmount caps each order; dailyBudget caps daily reservations when nonzero. dryRun defaults to automation preview. loginDiagnostics records allowlisted login, cart and order stages without credentials or personal data. Existing local account and order files stay under DSH_HOME/waimai and never belong in environment sync.

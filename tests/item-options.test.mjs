@@ -7,6 +7,19 @@ const detail = () => ({ itemId: '17', storeId: 'store-17', tbItemId: '23', itemT
     stock: 10, price: '15.50', specs: [{ name: '份量', value: '大杯' }] }], brand: { attributes: [{ name: '温度', minPurchased: 1, maxPurchased: 1,
     details: [{ name: '少冰', saleStatus: 1, selected: true }, { name: '热', saleStatus: 0 }] }] } })
 
+test('zero-allowance optional extras keep base variants selectable but cannot enter a cart entity', () => {
+  const raw = detail(), extra = { name: '可选加料', isRequired: false, multiSelected: true, minPurchased: 0, maxPurchased: 0,
+    skus: [{ name: '配料', foodId: '61', skuId: '61', itemId: '61', tbItemId: '61', tbSkuId: '61', tbPackageId: '71', packageId: '71', price: 1, stock: 10 }] }
+  raw.brand.ingredientInfo = { ingredients: [extra] }
+  const options = itemOptionsData(raw, item, 'store-17'), variant = options.variants[0], attribute = variant.groups[0].choices[0].ref
+  assert.equal(variant.groups[1].maximum, 0); assert.equal(variant.groups[1].choices[0].available, false)
+  assert.deepEqual(selectedItemEntity(options, { variantRef: variant.ref, choiceRefs: [attribute], quantity: 1 }).ingredients, [])
+  assert.throws(() => selectedItemEntity(options, { variantRef: variant.ref, choiceRefs: [attribute, variant.groups[1].choices[0].ref], quantity: 1 }))
+  for (const mutate of [value => { value.isRequired = true }, value => { value.minPurchased = 1 }, value => { value.skus[0].selected = true }, value => { value.skus[0].defaultPurchased = 1 }]) {
+    const invalid = structuredClone(raw); mutate(invalid.brand.ingredientInfo.ingredients[0]); assert.throws(() => itemOptionsData(invalid, item, 'store-17'))
+  }
+})
+
 test('verified official variants project prices and required choices without exposing raw request fields', () => {
   const options = itemOptionsData(detail(), item, 'store-17')
   assert.equal(options.display.variants[0].name, '份量: 大杯')

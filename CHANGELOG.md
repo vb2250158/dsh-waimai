@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.3 — 2026-10-13
+
+- 修复平台可选配料额度为 0 时整个餐品无法读取规格的问题；保留基础规格和口味，零额度配料禁选，矛盾默认项或必选规则继续阻止加购。
+- Optional ingredient groups with a zero allowance no longer reject the whole item. Base variants remain available, zero-allowance extras remain disabled, and contradictory defaults still block cart changes.
+
 ## 0.3.2 — 2026-10-13
 
 - 会话菜单卡片按商品身份去重，避免平台多个分类重复列出同一餐品。
