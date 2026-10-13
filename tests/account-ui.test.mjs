@@ -7,6 +7,72 @@ import React from 'react'
 import { create, act } from 'react-test-renderer'
 import { Config } from '../lib/index.js'
 
+test('recorded Hema specifications display units and unavailable variants without inventing a price or writing a cart', async () => {
+  const fixture = JSON.parse(await readFile(new URL('./fixtures/agent-hema-product-detail.json', import.meta.url), 'utf8'))
+  const calls = []
+  const mounted = await mount({ async call(_channel, method) { calls.push(method); throw Error('Recorded specifications do not request private data') } }, { tool: fixture })
+  try {
+    const value = text(mounted.renderer.toJSON())
+    assert(value.includes(fixture.expected.name))
+    for (const expected of [...fixture.expected.specifications, ...fixture.expected.stock]) assert(value.includes(expected))
+    assert(value.includes('已售罄')); assert(value.includes('下单前需重新核验'))
+    assert(!value.includes('¥0')); assert(!value.includes('9001')); assert.equal(calls.length, 0)
+    assert(mounted.renderer.root.findAllByType('button').some(node => text(node.props.children) === fixture.expected.action))
+  } finally { mounted.close() }
+})
+
+test('Hema chat products open a specifications modal using the recorded account and freshly selected address', async () => {
+  const fixture = JSON.parse(await readFile(new URL('./fixtures/agent-hema-product-detail.json', import.meta.url), 'utf8'))
+  const result = JSON.parse(fixture.props.block.content[0].text).data, addressRef = 'a'.repeat(64), calls = []
+  fixture.name = 'mcp__waimai__get_menu'
+  fixture.props.block.content[0].text = JSON.stringify({ success: true, data: { platformId: 'hema', shopId: result.shopId,
+    categories: [{ id: 'search', items: [{ id: result.product.id, name: result.product.name, price: '49.90', productRef: result.productRef, availability: 'available' }] }] } })
+  const mounted = await mount({ async call(_channel, method, payload) {
+    calls.push({ method, payload })
+    if (method === 'profile') return ok(profile)
+    if (method === 'productDetail') return ok({ ...result, accountId: profile.id, addressRef })
+    throw Error('Unexpected Hema chat operation')
+  } }, { tool: fixture, addresses: async payload => {
+    calls.push({ method: 'addresses', payload }); return ok({ accountId: profile.id, selectedRef: addressRef })
+  } })
+  try {
+    const root = mounted.renderer.root
+    await act(async () => root.findAllByType('button').find(node => text(node.props.children) === '查看规格').props.onClick())
+    assert.equal(root.findAllByProps({ role: 'dialog' }).length, 1)
+    assert(text(mounted.renderer.toJSON()).includes(result.product.variants[0].name))
+    assert.deepEqual(calls.map(call => call.method).sort(), ['addresses', 'productDetail', 'profile'])
+    assert(calls.every(call => call.payload.platformId === 'hema' && call.payload.accountRef === '11111111-1111-4111-8111-111111111111'))
+    assert.equal(calls.find(call => call.method === 'productDetail').payload.addressRef, addressRef)
+    act(() => root.findByProps({ role: 'dialog' }).props.onClose())
+    assert.equal(root.findAllByProps({ role: 'dialog' }).length, 0)
+  } finally { mounted.close() }
+})
+
+test('a mismatched Hema account prevents product reads and failed refreshes discard old specifications', async () => {
+  const fixture = JSON.parse(await readFile(new URL('./fixtures/agent-hema-product-detail.json', import.meta.url), 'utf8'))
+  const result = JSON.parse(fixture.props.block.content[0].text).data, addressRef = 'a'.repeat(64), calls = []
+  let mismatch = true, fail = false
+  const mounted = await mount({ async call(_channel, method, payload) {
+    calls.push(method)
+    if (method === 'profile') return ok(profile)
+    if (method === 'productDetail') return fail ? { ok: false, error: { code: 'product-changed', message: '商品选择已失效' } } : ok({ ...result, accountId: profile.id, addressRef })
+    throw Error('Unexpected operation')
+  } }, { tool: fixture, addresses: async () => ok({ accountId: mismatch ? '999' : profile.id, selectedRef: addressRef }) })
+  try {
+    const root = mounted.renderer.root
+    await act(async () => root.findAllByType('button').find(node => text(node.props.children) === '刷新商品规格').props.onClick())
+    assert(!calls.includes('productDetail'))
+    const modal = () => root.findByProps({ role: 'dialog' })
+    assert(text(modal()).includes('账号已变化'))
+    mismatch = false
+    await act(async () => modal().findByType('button').props.onClick())
+    assert(text(modal()).includes(result.product.name))
+    fail = true
+    await act(async () => modal().findByType('button').props.onClick())
+    assert(!text(modal()).includes(result.product.name)); assert(text(modal()).includes('商品选择已失效'))
+  } finally { mounted.close() }
+})
+
 test('recorded product queries retain identical items in different stores and open the selected merchant within the recorded account', async () => {
   const fixture = JSON.parse(await readFile(new URL('./fixtures/agent-product-search.json', import.meta.url), 'utf8')), calls = [], addressRef = 'a'.repeat(64)
   const mounted = await mount({ async call(_channel, method, payload) {

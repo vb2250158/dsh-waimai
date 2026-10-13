@@ -8,6 +8,8 @@ Each platform declares its login methods and default entry. Taobao provides QR a
 
 ## Agent ordering
 
+Hema products in the conversation open a specifications modal. get_product_details renders pack sizes, minimum quantity, quantity step, stock and pricing units. Recorded details warn that prices and stock can change. Refresh uses the account from the recorded tool call and verifies its current delivery address; changed identities, invalid product references and failed refreshes discard previous details. An unconfirmed price is never rendered as zero. Specifications cards do not add to cart, create orders or pay.
+
 search_shops returns an opaque nextCursor for nearby merchant pages, including pages with no keyword matches. Positions are bound to the account, query, scope and native delivery selection; reloads, expiry or eviction require restarting from the first page. Advanced settings expose browseCursorSeconds and browseCursorLimit.
 
 search_products reads current menus in up to ten explicitly selected stores. Results retain product names, pack descriptions, listed prices and availability, and declare selected-stores-only scope. Failed stores remain visible with complete: false. Explicit platform empty-store responses display their notice; unexplained or malformed responses remain errors. A case of water requires verification of bottle capacity, bottle count and the actual SKU; listed prices cannot establish the lowest checkout total.

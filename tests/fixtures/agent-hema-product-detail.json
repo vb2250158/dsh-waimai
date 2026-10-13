@@ -1,0 +1,18 @@
+{
+  "name": "mcp__waimai__get_product_details",
+  "props": {
+    "phase": "result",
+    "sessionId": "hema-product-session",
+    "callId": "hema-product-call",
+    "block": {
+      "call": { "argsRaw": "{\"platformId\":\"hema\",\"accountRef\":\"11111111-1111-4111-8111-111111111111\",\"productRef\":\"22222222-2222-4222-8222-222222222222\"}" },
+      "content": [{ "type": "text", "text": "{\"success\":true,\"data\":{\"platformId\":\"hema\",\"productRef\":\"22222222-2222-4222-8222-222222222222\",\"shopId\":\"7001\",\"product\":{\"id\":\"8001\",\"name\":\"示例矿泉水\",\"description\":\"整箱装\",\"imageUrl\":null,\"price\":null,\"priceUnit\":\"箱\",\"available\":true,\"variants\":[{\"id\":\"9001\",\"name\":\"570ml×24瓶/箱\",\"minimumQuantity\":1,\"quantityStep\":1,\"stockQuantity\":7,\"saleUnit\":\"箱\",\"chargeUnit\":\"箱\"},{\"id\":\"9002\",\"name\":\"1.5L×12瓶/箱\",\"minimumQuantity\":1,\"quantityStep\":1,\"stockQuantity\":0,\"saleUnit\":\"箱\",\"chargeUnit\":\"箱\"}]}}}" }]
+    }
+  },
+  "expected": {
+    "name": "示例矿泉水",
+    "specifications": ["570ml×24瓶/箱", "1.5L×12瓶/箱"],
+    "stock": ["库存: 7 · 计价单位: 箱", "库存: 0 · 计价单位: 箱"],
+    "action": "刷新商品规格"
+  }
+}
