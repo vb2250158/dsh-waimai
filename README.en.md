@@ -1,5 +1,7 @@
 # dsh-waimai
 
+Hema delivery store IDs are normalized before address checks, so reordered IDs do not invalidate checkout; changed store membership still stops submission. Order diagnostics retain structured return codes without remote messages, credentials or payment links. Unknown outcomes retain the original attempt and block duplicate submission.
+
 A DeepSeek Harness plugin for Taobao Instant Commerce and Hema. Account-scoped HTTP provides sign-in, addresses, history, products and carts. Hema supports integer SKU additions, verified checkout quotes and confirmed order creation; payment continues in the official app. Meituan and JD are not integrated.
 
 QR accounts show the Taobao display nickname and self portrait from the same authenticated session. A portrait with another native nickname is rejected. Missing or failed portraits use the nickname initial with a refresh notice. Account IDs remain in account details; an absent nickname uses the unnamed-account label. Both the Taobao identity and ordering identity are checked around the read; changed identities stop profile display.

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 import { HemaTrade } from '../lib/hema-trade.js'
+import { hemaAddresses } from '../lib/hema-data.js'
 import { hemaCheckoutData, hemaSubmitParameters, hemaPaymentDestination } from '../lib/hema-trade-data.js'
 
 const addressRef = 'a'.repeat(64), revision = 'b'.repeat(64)
@@ -55,6 +56,21 @@ test('Hema quote resolves serviceable IDs and validates real totals without chan
   } finally { await f.close() }
 })
 
+test('Hema checkout tolerates reordered store IDs but submission rejects changed store membership', async () => {
+  const f = await fixture()
+  let reads = 0, changedStores = false
+  f.trade.service.selectedAddress = async () => hemaAddresses({ addressList: [{ ...address,
+    decidedShopData: { groupList: [{ groupId: '456', groupName: 'Synthetic store', groupType: 'FRESH_GROUP', deliveryType: 'DELIVERY',
+      ext: { shopIds: changedStores ? '111,333' : ++reads % 2 ? '222,111' : '111,222' } }] } }] }, '555')[0]
+  try {
+    const quote = await f.trade.checkout(f.args)
+    assert.equal(quote.totalCents, 5290)
+    changedStores = true
+    await assert.rejects(f.trade.submit({ quoteRef: quote.quoteRef, confirmed: true, confirmedCents: 5290, manualConfirmation: true }), /配送地址已变化/)
+    assert(!f.calls.some(call => call.api === 'mtop.trade.order.create'))
+  } finally { await f.close() }
+})
+
 test('Hema quote rejects changed address, added products, inconsistent totals and extra consent', () => {
   for (const mutate of [body => { body.data.address.fields.selectedId = 999 }, body => { body.data.item.fields.skuId = 999 },
     body => { body.data.bottom.fields.price = '¥51.90' }, body => { body.data.freight.fields.freight = 900 },
@@ -76,6 +92,21 @@ test('Hema cashier handoffs reject foreign hosts, credentials, cleartext and cus
   assert.equal(hemaPaymentDestination(valid), valid)
   for (const value of [undefined, 'https://evil.test/cashier/a', 'https://mclient.alipay.com.evil.test/cashier/a',
     'http://mclient.alipay.com/cashier/a', 'https://user:secret@mclient.alipay.com/cashier/a', 'alipays://platformapi/startapp', 'https://mclient.alipay.com:444/cashier/a']) assert.equal(hemaPaymentDestination(value), null)
+})
+
+test('Hema create diagnostics retain business code punctuation while withholding remote messages', async () => {
+  const f = await fixture(), original = f.trade.login.mtop
+  f.trade.login.mtop = async (spec, ...args) => spec.api === 'mtop.trade.order.create'
+    ? { ret: ['FAIL_BIZ_-123.invalid::private-phone-and-payment-url'], data: {} }
+    : original(spec, ...args)
+  try {
+    const quote = await f.trade.checkout(f.args)
+    await assert.rejects(f.trade.submit({ quoteRef: quote.quoteRef, confirmed: true, confirmedCents: 5290, manualConfirmation: true }), /下单结果未确认/)
+    assert.deepEqual(f.events.find(event => event.stage === 'hema-create-reply').ret, ['FAIL_BIZ_-123.invalid'])
+    assert(!JSON.stringify(f.events).includes('private-phone-and-payment-url'))
+    const journal = JSON.parse(await readFile(join(f.directory, 'trade-attempts.json'), 'utf8'))
+    assert.equal(journal.attempts[0].status, 'unknown')
+  } finally { await f.close() }
 })
 
 test('Hema submission reserves once and returns created IDs without persisting cashier credentials', async () => {
