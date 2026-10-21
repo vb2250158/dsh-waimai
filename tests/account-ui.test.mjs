@@ -282,6 +282,60 @@ test('Hema checkout cards refresh native quotes, show the recorded cost breakdow
   } finally { mounted.close() }
 })
 
+test('Hema delivery repricing resets confirmation and an unknown order permits only one explicitly verified retry', async () => {
+  const fixture = JSON.parse(await readFile(new URL('./fixtures/agent-hema-checkout.json', import.meta.url), 'utf8'))
+  const expected = JSON.parse(await readFile(new URL('./fixtures/agent-hema-delivery-retry.json', import.meta.url), 'utf8'))
+  const accountRef = randomUUID(), addressRef = 'a'.repeat(64), revision = 'b'.repeat(64), calls = []
+  const deliveryRef = randomUUID(), originalRef = randomUUID(), adjustedRef = randomUUID(), retryRef = randomUUID()
+  let checkoutReads = 0
+  const quote = (quoteRef, selected) => ({ accountId: profile.id, addressRef, quoteRef, expiresAt: Date.now() + 60000, maxOrderCents: 6000,
+    totalCents: selected ? 5290 : 4990, itemPriceCents: 4990, discountCents: 700, fees: [], requiresDeliveryChoice: !selected,
+    address: { address: '示例地址', contact: '示例联系人', maskedPhone: '138****0000' }, deliveryTime: selected ? '次日送达' : '选择时间',
+    items: [{ id: '789', skuId: '987', name: fixture.item, quantity: 1, specification: '570ml×24', totalCents: 4290 }],
+    deliveryOptions: [{ ref: deliveryRef, label: '次日配送', feeCents: 1000, selected }, { ref: randomUUID(), label: '后日配送', feeCents: 1000, selected: false }] })
+  const mounted = await mount({ async call(_channel, method, payload) {
+    calls.push({ method, payload })
+    if (method === 'profile') return ok(profile)
+    if (method === 'checkout') return ok(++checkoutReads === 1 ? quote(originalRef, false) : quote(retryRef, true))
+    if (method === 'selectDelivery') return ok(quote(adjustedRef, true))
+    if (method === 'submit') return { ok: false, error: { code: 'order-unknown', message: '下单结果未确认' } }
+    throw Error('Unexpected delivery operation')
+  } }, { tool: { name: 'mcp__waimai__submit_order', props: { phase: 'result', sessionId: 'delivery', callId: 'delivery-call',
+    block: { content: [{ type: 'text', text: JSON.stringify({ success: true, data: { view: 'checkout', platformId: 'hema', accountRef,
+      shopId: '456', revision, lineIds: ['321'], maxAmountCents: 5290 } }) }] } } },
+    addresses: async () => ok({ accountId: profile.id, selectedRef: addressRef, addresses: [{ ref: addressRef, usable: true }] }) })
+  try {
+    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
+    const checks = () => root.findAll(node => node.type === 'span' && node.props.checked !== undefined)
+    assert(checks()[0].props.disabled); assert(button(fixture.create).props.disabled)
+    const picker = root.findAll(node => node.type === 'span' && node.props.className === 'waimai-choice')[0]
+    await act(async () => picker.props.onSelect(deliveryRef))
+    assert(text(root).includes(expected.selectedTotal)); assert.equal(checks()[0].props.checked, false)
+    await act(async () => checks()[0].props.onChange({ target: { checked: true } }))
+    await act(async () => button(fixture.create).props.onClick())
+    assert(text(root).includes('保留原请求记录'))
+    await act(async () => button('去结算').props.onClick())
+    assert(button('确认重试一次').props.disabled)
+    await act(async () => checks()[1].props.onChange({ target: { checked: true } }))
+    assert(button('确认重试一次').props.disabled)
+    await act(async () => checks()[0].props.onChange({ target: { checked: true } }))
+    assert.equal(button('确认重试一次').props.disabled, false)
+    await act(async () => button('确认重试一次').props.onClick())
+    assert(button('去结算').props.disabled)
+    assert(text(root).includes('本次重试已使用'))
+    const submits = calls.filter(row => row.method === 'submit')
+    assert.equal(submits.length, 2); assert.equal(submits[0].payload.retryOf, undefined)
+    assert.equal(submits[1].payload.retryOf, adjustedRef); assert.equal(submits[1].payload.previousOrderAbsent, true)
+    assert.equal(submits[1].payload.quoteRef, retryRef)
+    assert.deepEqual({ ...calls.find(row => row.method === 'selectDelivery').payload },
+      { platformId: 'hema', accountRef, quoteRef: originalRef, deliveryRef })
+    assert.deepEqual({ selectedTotal: expected.selectedTotal, retryAction: '确认重试一次', verification: '我已在盒马 App 确认原请求未生成订单',
+      exhausted: root.findAllByProps({ role: 'status' }).map(node => text(node.props.children)).find(value => value.startsWith('本次重试已使用')),
+      submitCount: submits.length, deliveryCount: calls.filter(row => row.method === 'selectDelivery').length,
+      originalAttemptRetained: submits[1].payload.retryOf === adjustedRef }, expected)
+  } finally { mounted.close() }
+})
+
 test('Hema view uses explicit Taobao sign-in, private account scope and remote product search', async () => {
   const calls = [], ref = '11111111-1111-4111-8111-111111111111', source = '22222222-2222-4222-8222-222222222222', addressRef = 'a'.repeat(64)
   let linked = false

@@ -1,0 +1,9 @@
+{
+  "selectedTotal": "¥52.90",
+  "retryAction": "确认重试一次",
+  "verification": "我已在盒马 App 确认原请求未生成订单",
+  "exhausted": "本次重试已使用，请核对官方订单及本机记录。",
+  "submitCount": 2,
+  "deliveryCount": 1,
+  "originalAttemptRetained": true
+}

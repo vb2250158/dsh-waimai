@@ -65,6 +65,10 @@
     "url": "https://h5api.m.taobao.com/h5/mtop.trade.order.build/4.0/",
     "api": "mtop.trade.order.build", "version": "4.0", "appKey": "12574478", "jsv": "2.7.2", "method": "POST"
   },
+  "adjust": {
+    "url": "https://h5api.m.taobao.com/h5/mtop.trade.order.adjust/5.0/",
+    "api": "mtop.trade.order.adjust", "version": "5.0", "appKey": "12574478", "jsv": "2.7.2", "method": "POST"
+  },
   "submit": {
     "url": "https://h5api.m.taobao.com/h5/mtop.trade.order.create/4.0/",
     "api": "mtop.trade.order.create", "version": "4.0", "appKey": "12574478", "jsv": "2.7.2", "method": "POST"

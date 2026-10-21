@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 import { HemaTrade } from '../lib/hema-trade.js'
 import { hemaAddresses } from '../lib/hema-data.js'
-import { hemaCheckoutData, hemaSubmitParameters, hemaPaymentDestination } from '../lib/hema-trade-data.js'
+import { hemaCheckoutData, hemaSubmitParameters, hemaPaymentDestination, hemaAdjustParameters, hemaReturnCode } from '../lib/hema-trade-data.js'
 
 const addressRef = 'a'.repeat(64), revision = 'b'.repeat(64)
 const address = { addreid: '123', geoCode: 'private-coordinates', addrName: 'Synthetic road', addrDetail: 'Synthetic room', linkPhone: '13800000000', linkMan: 'Test user', addressType: 1, deliveryDockId: '' }
@@ -34,6 +34,12 @@ async function fixture(options = {}) {
       if (spec.api.includes('decideByAddressId')) return { ret: ['SUCCESS::fixture'], data: { userAddress: address, groupList: [{ groupId: '456', deliveryType: 'DELIVERY', shopIds: '111,222', locationIds: 'verified-location-map' }] } }
       if (spec.api === 'mtop.wdk.hema.cart.confirm') return { ret: ['SUCCESS::fixture'], data: { buyParam: 'native-buy-params', exParams: '{}', selectedShopIds: '222', confirmAlertInfo: {} } }
       if (spec.api === 'mtop.trade.order.build') return { ret: ['SUCCESS::fixture'], data: body }
+      if (spec.api === 'mtop.trade.order.adjust') {
+        const adjusted = JSON.parse(gunzipSync(Buffer.from(payload.params, 'base64')))
+        body.data.time.fields.selectedId = adjusted.data.time.fields.selectedId
+        body.data.time.fields.selectTime = 'Verified delivery option ' + body.data.time.fields.selectedId
+        return { ret: ['SUCCESS::fixture'], data: body }
+      }
       if (spec.api === 'mtop.trade.order.create') { if (failCreate) throw Error('transport lost'); return { ret: ['SUCCESS::fixture'], data: { bizOrderId: '10001', nextUrl: 'private-must-not-persist' } } }
       throw Error('unexpected API')
     } }
@@ -42,8 +48,83 @@ async function fixture(options = {}) {
       display: { revision: currentRevision, items: [{ id: line.cartId, available: true, selected: false }] } }) }
   const trade = new HemaTrade(service, { journalDirectory: directory, cap: 60, now: () => now, ...options })
   return { trade, calls, events, directory, args: { addressRef, revision, lineIds: [line.cartId], shopId: '456' },
-    change: value => { if (value.body) body = value.body; if (value.revision) currentRevision = value.revision; if (value.failCreate) failCreate = true; if (value.expire) now += 121000; if (value.identity) { identity = value.identity; login.accountId = identity } }, close: () => rm(directory, { recursive: true, force: true }) }
+    change: value => { if (value.body) body = value.body; if (value.revision) currentRevision = value.revision; if ('failCreate' in value) failCreate = value.failCreate; if (value.expire) now += 121000; if (value.identity) { identity = value.identity; login.accountId = identity } }, close: () => rm(directory, { recursive: true, force: true }) }
 }
+
+function deliveryBody(count) {
+  const body = quoteBody()
+  body.linkage.common.queryParams = 'opaque-query'
+  body.linkage.input = ['root', 'address']
+  body.data.time.fields.selectTime = '选择时间'
+  body.data.time.hidden = { extensionMap: { context: JSON.stringify({ disable: false, hidden: false, recommendSelectId: '0,0',
+    availableDates: [{ date: '2026-10-23', displayLabel: 'Synthetic day',
+      availableTimes: Array.from({ length: count }, (_, index) => ({ time: `Synthetic slot ${index}`, postFee: '10.00' })) }] }) } }
+  return body
+}
+
+test('a sole Hema delivery option is selected and repriced before a submittable quote is returned', async () => {
+  const f = await fixture()
+  try {
+    f.change({ body: deliveryBody(1) })
+    const quote = await f.trade.checkout(f.args)
+    assert.equal(quote.requiresDeliveryChoice, false); assert.equal(quote.deliveryOptions.length, 1)
+    assert.equal(quote.deliveryOptions[0].selected, true); assert.match(quote.deliveryTime, /Verified delivery/)
+    const call = f.calls.find(row => row.api === 'mtop.trade.order.adjust')
+    const request = JSON.parse(gunzipSync(Buffer.from(call.payload.params, 'base64')))
+    assert.equal(request.operator, 'time'); assert.equal(request.data.time.fields.selectedId, '0,0')
+    assert.equal(request.linkage.common.queryParams, 'opaque-query'); assert(!request.linkage.common.submitParams)
+    assert.deepEqual(Object.keys(request.data).sort(), ['address', 'root', 'time'])
+    assert(!JSON.stringify(quote).includes('opaque-')); assert.equal(call.retry, false)
+  } finally { await f.close() }
+})
+
+test('multiple Hema delivery options require a current opaque selection and new amount confirmation', async () => {
+  const f = await fixture()
+  try {
+    const body = deliveryBody(2); f.change({ body })
+    const quote = await f.trade.checkout(f.args)
+    assert.equal(quote.requiresDeliveryChoice, true)
+    await assert.rejects(f.trade.submit({ quoteRef: quote.quoteRef, confirmed: true, confirmedCents: 5290, manualConfirmation: true }), /请选择配送/)
+    assert.throws(() => hemaSubmitParameters(body), /delivery selection required/)
+    await assert.rejects(f.trade.selectDelivery({ quoteRef: quote.quoteRef, deliveryRef: '11111111-1111-4111-8111-111111111111' }), /配送选项已变化/)
+    const next = await f.trade.selectDelivery({ quoteRef: quote.quoteRef, deliveryRef: quote.deliveryOptions[1].ref })
+    assert.notEqual(next.quoteRef, quote.quoteRef); assert.equal(next.requiresDeliveryChoice, false)
+    assert.equal(next.deliveryOptions[1].selected, true)
+    await assert.rejects(f.trade.submit({ quoteRef: quote.quoteRef, confirmed: true, confirmedCents: 5290, manualConfirmation: true }), /报价已过期/)
+    const decoded = JSON.parse(gunzipSync(Buffer.from(hemaSubmitParameters(f.trade.quote.raw).params, 'base64')))
+    assert.equal(decoded.data.time.fields.selectedId, '0,1')
+    assert(!f.calls.some(call => call.api === 'mtop.trade.order.create'))
+    delete body.linkage.common.queryParams
+    assert.throws(() => hemaAdjustParameters(body, 'time', '0,1'), /missing private adjustment/)
+  } finally { await f.close() }
+})
+
+test('Hema native diagnostics recognize TOP protocol codes without retaining messages or URLs', () => {
+  assert.equal(hemaReturnCode('isp.remote-service-error::private-response'), 'isp.remote-service-error')
+  assert.equal(hemaReturnCode('isv.invalid-parameter::private-response'), 'isv.invalid-parameter')
+  assert.equal(hemaReturnCode('https://private.test/credential::private-response'), 'unrecognized')
+})
+
+test('one explicitly confirmed Hema retry retains the unknown attempt and cannot be reused or chained', async () => {
+  const f = await fixture()
+  try {
+    let quote = await f.trade.checkout(f.args)
+    f.change({ failCreate: true })
+    await assert.rejects(f.trade.submit({ quoteRef: quote.quoteRef, confirmed: true, confirmedCents: 5290, manualConfirmation: true }), /下单结果未确认/)
+    const before = JSON.parse(await readFile(join(f.directory, 'trade-attempts.json'), 'utf8')), retryOf = quote.quoteRef
+    f.change({ failCreate: false }); quote = await f.trade.checkout(f.args)
+    const args = { quoteRef: quote.quoteRef, confirmed: true, confirmedCents: 5290, manualConfirmation: true, retryOf }
+    await assert.rejects(f.trade.submit(args), /明确确认重试/)
+    const created = await f.trade.submit({ ...args, previousOrderAbsent: true })
+    const after = JSON.parse(await readFile(join(f.directory, 'trade-attempts.json'), 'utf8'))
+    assert.deepEqual(after.attempts[0], before.attempts[0]); assert.equal(after.attempts.length, 2)
+    assert.equal(after.attempts[1].status, 'created'); assert.notEqual(after.attempts[0].fingerprint, after.attempts[1].fingerprint)
+    quote = await f.trade.checkout(f.args)
+    await assert.rejects(f.trade.submit({ ...args, quoteRef: quote.quoteRef, previousOrderAbsent: true }), /相同商品已有下单记录/)
+    await assert.rejects(f.trade.submit({ ...args, quoteRef: quote.quoteRef, retryOf: created.orderRef, previousOrderAbsent: true }), /明确确认重试/)
+    assert.equal(f.calls.filter(call => call.api === 'mtop.trade.order.create').length, 2)
+  } finally { await f.close() }
+})
 
 test('Hema quote resolves serviceable IDs and validates real totals without changing unchecked cart lines', async () => {
   const f = await fixture()
@@ -95,6 +176,7 @@ test('Hema cashier handoffs reject foreign hosts, credentials, cleartext and cus
 })
 
 test('Hema create diagnostics retain business code punctuation while withholding remote messages', async () => {
+  assert.equal(hemaReturnCode('RGV587_ERROR::private-challenge-url'), 'RGV587_ERROR')
   const f = await fixture(), original = f.trade.login.mtop
   f.trade.login.mtop = async (spec, ...args) => spec.api === 'mtop.trade.order.create'
     ? { ret: ['FAIL_BIZ_-123.invalid::private-phone-and-payment-url'], data: {} }

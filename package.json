@@ -1,6 +1,6 @@
 {
   "name": "dsh-waimai",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "description": "Browse Taobao Instant Commerce and Hema addresses, menus and orders, confirm cart quotes and open official payment pages.",
   "type": "module",
   "main": "lib/index.js",

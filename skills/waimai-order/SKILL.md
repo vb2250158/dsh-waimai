@@ -24,4 +24,4 @@ get_menu 使用返回的稳定 shopId，读取当前菜品、标价和库存。�
 
 盒马使用 get_menu 的 keyword 搜索商品，get_product_details 核对 productRef 对应的规格；用户可在会话弹窗选择 SKU 与整数数量加购。Agent 先 get_cart(platformId: hema) 读取 revision，再 add_product_to_cart 传 productRef、skuId、quantity、revision 和固定 operationRef。未知结果只 get_cart 回读；同一操作不重新分配 operationRef，不重试修改。保留其他商品和勾选状态，称重及跨平台商品的加购方式未确认时停止。
 
-盒马结算调用 submit_order，明确传 platformId: hema、accountRef、lineIds 和 maxAmount（元）；lineIds 来自当前 get_cart 返回的指定商品 id，不默认购买全部购物车。每种商品暂限数量为 1，结算选中不改变官方购物车勾选。真实报价包含平台优惠、基础及超重运费，会员权益以本次报价为准，不保证所有权益已经接入。卡片重新核对地址、SKU、数量和金额，确认后单次创建订单；付款在盒马 App 完成。真实创建及付款仍待实单验收，按官方订单状态报告结果。
+盒马结算调用 submit_order，明确传 platformId: hema、accountRef、lineIds 和 maxAmount（元）；lineIds 来自当前 get_cart 返回的指定商品 id，不默认购买全部购物车。每种商品暂限数量为 1，结算选中不改变官方购物车勾选。真实报价包含平台优惠、基础及超重运费，会员权益以本次报价为准，不保证所有权益已经接入。唯一配送选项自动向平台确认；多个配送方式或时间通过卡片选择并重新计价，再确认地址、SKU、数量和金额，单次创建订单。未知结果先核对官方订单，不重复调用购买；仅用户在 App 确认原请求无订单后，才可通过私人卡片明确确认一次同规格、不加价的重试。原记录保留，不能连续重试。付款在盒马 App 完成。真实创建及付款仍待实单验收，按官方订单状态报告结果。

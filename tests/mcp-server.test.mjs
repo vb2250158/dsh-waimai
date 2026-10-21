@@ -40,6 +40,7 @@ const EXPECTED_TOOLS = [
   'account_cart',
   'account_cart_change',
   'account_checkout',
+  'account_select_delivery',
   'account_submit',
   'account_trade_history',
   'account_list',
@@ -97,6 +98,9 @@ test('the server advertises every takeaway tool', async () => {
     assert.deepEqual(add.inputSchema.required, ['platformId', 'accountRef', 'productRef', 'skuId', 'quantity', 'revision', 'operationRef'])
     const cart = tools.find(tool => tool.name === 'get_cart')
     assert.deepEqual(cart.inputSchema.properties.platformId.enum, ['taobao', 'hema'])
+    const delivery = tools.find(tool => tool.name === 'account_select_delivery')
+    assert.equal(delivery.inputSchema.properties.platformId.const, 'hema')
+    assert.deepEqual(delivery.inputSchema.required, ['platformId', 'accountRef', 'quoteRef', 'deliveryRef'])
   } finally {
     await close()
   }
