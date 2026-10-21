@@ -336,6 +336,40 @@ test('Hema delivery repricing resets confirmation and an unknown order permits o
   } finally { mounted.close() }
 })
 
+test('unsupported phone selections do not enter a Hema checkout or prevent choosing a different single case', async () => {
+  const accountRef = randomUUID(), addressRef = 'a'.repeat(64), revision = 'b'.repeat(64), calls = []
+  const expected = JSON.parse(await readFile(new URL('./fixtures/hema-checkout-selection.json', import.meta.url), 'utf8'))
+  const mounted = await mount({ async call(_channel, method, payload) {
+    calls.push({ method, payload })
+    if (method === 'status') return ok({ authenticated: true, state: 'logged-in', viewAccountRef: accountRef,
+      accounts: [{ ref: accountRef, nickname: profile.nickname, externalId: profile.id, loginMethod: 'taobao-qr' }] })
+    if (method === 'profile') return ok(profile)
+    if (method === 'nearbyShops') return ok({ accountId: profile.id, addressRef, shops: [], nextCursor: null })
+    if (method === 'cart') return ok({ accountId: profile.id, addressRef, revision, availableCount: 2, selectedCount: 1,
+      items: [{ id: '123', name: '示例米饭', available: true, quantity: '2', selected: true, price: '2.50', priceUnit: '/盒' },
+        { id: '321', name: '示例矿泉水', available: true, quantity: '1', selected: false, price: '42.90', priceUnit: '/箱' }] })
+    if (method === 'checkout') return { ok: false, error: { code: 'fixture-stop', message: '合成报价停止' } }
+    throw Error('Unexpected cart selection request')
+  } }, { config: { defaultPlatform: 'hema' }, addresses: async () => ok({ accountId: profile.id, selectedRef: addressRef,
+    addresses: [{ ref: addressRef, address: '示例地址', usable: true }] }) })
+  try {
+    const root = mounted.renderer.root, click = label => root.findAllByType('button').find(node => text(node.props.children) === label).props.onClick()
+    await act(async () => click('门店与商品'))
+    await act(async () => click('查看购物车'))
+    const checks = root.findAll(node => node.type === 'span' && node.props.checked !== undefined)
+    const initialSelected = checks.filter(node => node.props.checked).length
+    const unsupportedDisabled = checks[0].props.disabled
+    assert.equal(initialSelected, 0); assert(checks[0].props.disabled)
+    assert(root.findAllByType('button').find(node => text(node.props.children) === '去结算 · 0').props.disabled)
+    assert(text(root).includes('手机已勾选')); assert(text(root).includes(expected.label))
+    await act(async () => checks[1].props.onChange({ target: { checked: true } }))
+    await act(async () => click('去结算 · 1'))
+    assert.deepEqual({ initialSelected, unsupportedDisabled, label: '本次结算',
+      lineIds: Array.from(calls.find(row => row.method === 'checkout').payload.lineIds),
+      cartWrites: calls.filter(row => ['cartAdd', 'cartChange', 'submit'].includes(row.method)).length }, expected)
+  } finally { mounted.close() }
+})
+
 test('Hema view uses explicit Taobao sign-in, private account scope and remote product search', async () => {
   const calls = [], ref = '11111111-1111-4111-8111-111111111111', source = '22222222-2222-4222-8222-222222222222', addressRef = 'a'.repeat(64)
   let linked = false
