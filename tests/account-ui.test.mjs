@@ -237,7 +237,7 @@ test('the chat checkout card refreshes its quote and requires the user to confir
     assert.equal(button().props.disabled, true)
     assert(!calls.some(call => call.method === 'submit'))
     const checkbox = mounted.renderer.root.findAll(node => node.type === 'span' && node.props.checked !== undefined)[0]
-    await act(async () => checkbox.props.onChange({ target: { checked: true } }))
+    await act(async () => checkbox.props.onChange(true))
     assert.equal(button().props.disabled, false)
     await act(async () => button().props.onClick())
     assert.equal(calls.filter(call => call.method === 'submit').length, 1)
@@ -271,7 +271,7 @@ test('Hema checkout cards refresh native quotes, show the recorded cost breakdow
     const createButton = () => root.findAllByType('button').find(node => text(node.props.children) === expected.create)
     assert(createButton().props.disabled); assert(!calls.some(call => call.method === 'submit'))
     const checkbox = root.findAll(node => node.type === 'span' && node.props.checked !== undefined)[0]
-    await act(async () => checkbox.props.onChange({ target: { checked: true } }))
+    await act(async () => checkbox.props.onChange(true))
     assert.equal(createButton().props.disabled, false)
     await act(async () => createButton().props.onClick())
     assert.equal(calls.filter(call => call.method === 'submit').length, 1)
@@ -311,14 +311,14 @@ test('Hema delivery repricing resets confirmation and an unknown order permits o
     const picker = root.findAll(node => node.type === 'span' && node.props.className === 'waimai-choice')[0]
     await act(async () => picker.props.onSelect(deliveryRef))
     assert(text(root).includes(expected.selectedTotal)); assert.equal(checks()[0].props.checked, false)
-    await act(async () => checks()[0].props.onChange({ target: { checked: true } }))
+    await act(async () => checks()[0].props.onChange(true))
     await act(async () => button(fixture.create).props.onClick())
     assert(text(root).includes('保留原请求记录'))
     await act(async () => button('去结算').props.onClick())
     assert(button('确认重试一次').props.disabled)
-    await act(async () => checks()[1].props.onChange({ target: { checked: true } }))
+    await act(async () => checks()[1].props.onChange(true))
     assert(button('确认重试一次').props.disabled)
-    await act(async () => checks()[0].props.onChange({ target: { checked: true } }))
+    await act(async () => checks()[0].props.onChange(true))
     assert.equal(button('确认重试一次').props.disabled, false)
     await act(async () => button('确认重试一次').props.onClick())
     assert(button('去结算').props.disabled)
@@ -362,7 +362,7 @@ test('unsupported phone selections do not enter a Hema checkout or prevent choos
     assert.equal(initialSelected, 0); assert(checks[0].props.disabled)
     assert(root.findAllByType('button').find(node => text(node.props.children) === '去结算 · 0').props.disabled)
     assert(text(root).includes('手机已勾选')); assert(text(root).includes(expected.label))
-    await act(async () => checks[1].props.onChange({ target: { checked: true } }))
+    await act(async () => checks[1].props.onChange(true))
     await act(async () => click('去结算 · 1'))
     assert.deepEqual({ initialSelected, unsupportedDisabled, label: '本次结算',
       lineIds: Array.from(calls.find(row => row.method === 'checkout').payload.lineIds),
@@ -495,6 +495,10 @@ async function mount(rpc, options = {}) {
   const disposers = []
   const primitives = Object.fromEntries(['Button', 'Input', 'Switch', 'Menu', 'Checkbox', 'Tag', 'StateDot', 'IconPlusOutlineRegular', 'IconChevronDownOutlineRegular', 'IconTrashOutlineRegular'].map(name =>
     [name, props => React.createElement(name === 'Button' ? 'button' : 'span', props, props.children)]))
+  primitives.Checkbox = props => {
+    assert.equal(typeof props.label, 'string'); assert.equal(typeof props.checked, 'boolean')
+    return React.createElement('span', props, props.label)
+  }
   primitives.Modal = props => props.open ? React.createElement('section', { role: 'dialog', 'aria-label': props.title, onClose: props.onClose }, props.children, props.footer) : null
   primitives.Toast = props => React.createElement('div', { role: 'alert' }, props.text)
   runInNewContext(await readFile(new URL('../lib/client/index.js', import.meta.url), 'utf8'), {
@@ -595,8 +599,8 @@ test('Taobao cart shows an expiring server quote; creation requires explicit con
     assert.equal(button('确认创建订单').props.disabled, true)
     assert(text(mounted.renderer.toJSON()).includes('实付: ¥21.00'))
     assert(text(mounted.renderer.toJSON()).includes('明天 10:00 开始配送'))
-    const confirm = () => root.findAllByType('label').find(node => text(node.props.children) === '我已核对商品、配送地址、时间和实付金额').findByType('span')
-    await act(async () => confirm().props.onChange({ target: { checked: true } }))
+    const confirm = () => root.findAll(node => node.type === 'span' && node.props.label === '我已核对商品、配送地址、时间和实付金额')[0]
+    await act(async () => confirm().props.onChange(true))
     assert.equal(button('确认创建订单').props.disabled, false)
     await act(async () => { button('确认创建订单').props.onClick(); button('确认创建订单').props.onClick() })
     assert.equal(calls.filter(call => call.endpoint === 'submit').length, 1)
@@ -607,7 +611,7 @@ test('Taobao cart shows an expiring server quote; creation requires explicit con
     await act(async () => button('刷新购物车').props.onClick())
     failSubmit = true
     await act(async () => button('去结算').props.onClick())
-    await act(async () => confirm().props.onChange({ target: { checked: true } }))
+    await act(async () => confirm().props.onChange(true))
     await act(async () => button('确认创建订单').props.onClick())
     assert(text(mounted.renderer.toJSON()).includes('勿重复提交'))
     assert(!button('确认创建订单'))
