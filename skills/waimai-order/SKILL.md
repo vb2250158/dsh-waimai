@@ -6,7 +6,7 @@ whenToUse: 用户希望点外卖、推荐餐品、下单或查看订单付款状
 
 # 会话点餐
 
-先调用 list_platforms、get_status，使用用户指定平台；未指定时使用配置默认平台。淘宝闪购支持 Agent 点餐与用户确认下单卡片；自动任务购买、自动扣款、盒马购买、美团和京东尚未接入。createOrder 能力表示自动创建，不能据此声称会话确认下单不可用；查看 manualOrderingAvailable 和 orderingAvailable。
+先调用 list_platforms、get_status，使用用户指定平台；未指定时使用配置默认平台。淘宝闪购和盒马支持 Agent 购物车、报价及用户确认下单卡片；自动任务购买、自动扣款、美团和京东尚未接入。createOrder 能力表示自动创建，不能据此声称会话确认下单不可用；查看 manualOrderingAvailable 和 orderingAvailable。
 
 list_connections 返回已保存的账号引用。每次账号工具明确传 accountRef；多个账号不能猜测。同一账号须 prepare_ordering 复核登录及所选配送地址。缺登录或地址时引导「插件 → dsh-waimai → 账号与地址」；不索取手机号、验证码、地址文本或 Cookie 到聊天。
 
@@ -22,4 +22,6 @@ get_menu 使用返回的稳定 shopId，读取当前菜品、标价和库存。�
 
 创建成功后用 request_payment 展示本机订单对应的官方付款入口，用户在官方收银台完成付款。付款 URL 由私人鉴权界面读取，不进入模型。get_order_status 用 accountRef 和可选 orderRef 查询本机记录及对应官方状态；HTTP 200、支付入口或本机 paymentStatus: unconfirmed 不能声称已付款。订单结果未知时先核对官方订单，保留尝试与预算占用，不重复提交。平台要求额外验证时由用户在官方窗口完成。
 
-盒马使用 get_menu 的 keyword 搜索商品，get_product_details 核对 productRef 对应的规格；用户可在会话弹窗选择 SKU 与整数数量加购。Agent 先 get_cart(platformId: hema) 读取 revision，再 add_product_to_cart 传 productRef、skuId、quantity、revision 和固定 operationRef。未知结果只 get_cart 回读；同一操作不重新分配 operationRef，不重试修改。保留其他商品和勾选状态，称重及跨平台商品的加购方式未确认时停止。盒马结算、会员优惠和付款仍待接入；购物车显示价不能代替最终实付。真实创建与付款尚未实单验收，能力实现与购买成功分别报告。
+盒马使用 get_menu 的 keyword 搜索商品，get_product_details 核对 productRef 对应的规格；用户可在会话弹窗选择 SKU 与整数数量加购。Agent 先 get_cart(platformId: hema) 读取 revision，再 add_product_to_cart 传 productRef、skuId、quantity、revision 和固定 operationRef。未知结果只 get_cart 回读；同一操作不重新分配 operationRef，不重试修改。保留其他商品和勾选状态，称重及跨平台商品的加购方式未确认时停止。
+
+盒马结算调用 submit_order，明确传 platformId: hema、accountRef、lineIds 和 maxAmount（元）；lineIds 来自当前 get_cart 返回的指定商品 id，不默认购买全部购物车。每种商品暂限数量为 1，结算选中不改变官方购物车勾选。真实报价包含平台优惠、基础及超重运费，会员权益以本次报价为准，不保证所有权益已经接入。卡片重新核对地址、SKU、数量和金额，确认后单次创建订单；付款在盒马 App 完成。真实创建及付款仍待实单验收，按官方订单状态报告结果。

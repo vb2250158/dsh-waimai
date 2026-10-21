@@ -1,6 +1,6 @@
 # dsh-waimai
 
-A DeepSeek Harness plugin for Taobao Instant Commerce and Hema. Account-scoped HTTP provides sign-in, addresses, history, products and carts. Hema supports integer SKU additions; its checkout, membership discounts and payment integration remain pending. Meituan and JD are not integrated.
+A DeepSeek Harness plugin for Taobao Instant Commerce and Hema. Account-scoped HTTP provides sign-in, addresses, history, products and carts. Hema supports integer SKU additions, verified checkout quotes and confirmed order creation; payment continues in the official app. Meituan and JD are not integrated.
 
 QR accounts show the Taobao display nickname and self portrait from the same authenticated session. A portrait with another native nickname is rejected. Missing or failed portraits use the nickname initial with a refresh notice. Account IDs remain in account details; an absent nickname uses the unnamed-account label. Both the Taobao identity and ordering identity are checked around the read; changed identities stop profile display.
 
@@ -32,6 +32,8 @@ Install a fixed Git SHA through the managed DSH plugin installer. The package sh
 
 maxOrderAmount caps each order; dailyBudget caps daily reservations when nonzero. dryRun defaults to automation preview. loginDiagnostics records allowlisted login, cart and order stages without credentials or personal data. Existing local account and order files stay under DSH_HOME/waimai and never belong in environment sync.
 
-Cart changes, prices and checkout have prior live validation. Order submission and payment UI use synthetic tests; real order creation and completed payment have not been exercised.
+Hema checkout resolves serviceable shop and location IDs through ShopDecideApi.decideByAddressId, then calls mtop.wdk.hema.cart.confirm and mtop.trade.order.build. Explicit lineIds and the current cart revision select quote items without changing official cart selections. Each selected product must currently have quantity one. The owner verifies address, SKU, quantity, listed subtotal, discount, shipping breakdown and consistent totals. Extra charges, additional agreements and ambiguous replies stop submission. The quote is shared by the plugin page and Agent confirmation cards.
+
+Confirmed Hema orders use one mtop.trade.order.create request after a shared lock, durable budget reservation and readback. Changed addresses or carts, expired quotes, exceeded limits and duplicates stop before creation. Unknown outcomes stay reserved and are never retried automatically. Native parameters and signatures stay in backend memory; complete payment in the Hema app and verify official order status. Live Hema checkout and shipping totals were verified on 2026-10-21. Creation uses synthetic tests; real order creation and completed payment remain unverified.
 
 MIT

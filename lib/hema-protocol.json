@@ -52,5 +52,21 @@
     "version": "2.0",
     "appKey": "12574478",
     "jsv": "2.7.2"
+  },
+  "deliveryDecision": {
+    "url": "https://h5api.m.taobao.com/h5/mtop.wdk.lbs.location.shopdecideapi.decidebyaddressid/1.0/",
+    "api": "mtop.wdk.lbs.location.ShopDecideApi.decideByAddressId", "version": "1.0", "appKey": "12574478", "jsv": "2.7.2"
+  },
+  "cartConfirm": {
+    "url": "https://h5api.m.taobao.com/h5/mtop.wdk.hema.cart.confirm/1.0/",
+    "api": "mtop.wdk.hema.cart.confirm", "version": "1.0", "appKey": "12574478", "jsv": "2.7.2", "method": "POST"
+  },
+  "checkout": {
+    "url": "https://h5api.m.taobao.com/h5/mtop.trade.order.build/4.0/",
+    "api": "mtop.trade.order.build", "version": "4.0", "appKey": "12574478", "jsv": "2.7.2", "method": "POST"
+  },
+  "submit": {
+    "url": "https://h5api.m.taobao.com/h5/mtop.trade.order.create/4.0/",
+    "api": "mtop.trade.order.create", "version": "4.0", "appKey": "12574478", "jsv": "2.7.2", "method": "POST"
   }
 }

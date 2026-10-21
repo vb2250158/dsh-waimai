@@ -248,7 +248,41 @@ test('the chat checkout card refreshes its quote and requires the user to confir
   } finally { mounted.close() }
 })
 
-test('Hema view uses explicit Taobao sign-in, private account scope and remote product search without purchasing controls', async () => {
+test('Hema checkout cards refresh native quotes, show the recorded cost breakdown and submit once after confirmation', async () => {
+  const accountRef = '11111111-1111-4111-8111-111111111111', addressRef = 'a'.repeat(64), revision = 'b'.repeat(64), calls = []
+  const expected = JSON.parse(await readFile(new URL('./fixtures/agent-hema-checkout.json', import.meta.url), 'utf8'))
+  const quote = { platformId: 'hema', accountId: profile.id, addressRef, shopId: '456', revision, quoteRef: '22222222-2222-4222-8222-222222222222',
+    expiresAt: Date.now() + 60000, maxOrderCents: 6000, totalCents: 5290, itemPriceCents: 4990, discountCents: 700,
+    deliveryTime: '次日送达', address: { address: '示例地址', contact: '示例联系人', maskedPhone: '138****0000' }, merchant: expected.merchant,
+    items: [{ id: '789', skuId: '987', name: expected.item, quantity: 1, specification: '570ml×24', totalCents: 4290 }],
+    fees: [{ name: '基础运费', amountCents: 600 }, { name: '超重运费', amountCents: 400 }] }
+  const mounted = await mount({ async call(_channel, method, payload) {
+    calls.push({ method, payload })
+    if (method === 'profile') return ok(profile)
+    if (method === 'checkout') return ok(quote)
+    if (method === 'submit') return ok({ platformId: 'hema', accountId: profile.id, addressRef, orderIds: ['10001'], paymentStatus: 'unconfirmed', paymentUrl: null })
+    throw Error('Unexpected checkout operation')
+  } }, { tool: { name: 'mcp__waimai__submit_order', props: { phase: 'result', sessionId: 'hema-quote', callId: 'hema-call', block: { content: [{ type: 'text', text: JSON.stringify({ success: true,
+    data: { view: 'checkout', platformId: 'hema', accountRef, shopId: '456', revision, lineIds: ['321'], maxAmountCents: 5290 } }) }] } } },
+    addresses: async () => ok({ accountId: profile.id, selectedRef: addressRef, addresses: [{ ref: addressRef, usable: true }] }) })
+  try {
+    const root = mounted.renderer.root, content = text(mounted.renderer.toJSON())
+    for (const value of [expected.item, expected.specification, expected.discount, expected.total, expected.confirm, ...expected.fees]) assert(content.includes(value), value)
+    const createButton = () => root.findAllByType('button').find(node => text(node.props.children) === expected.create)
+    assert(createButton().props.disabled); assert(!calls.some(call => call.method === 'submit'))
+    const checkbox = root.findAll(node => node.type === 'span' && node.props.checked !== undefined)[0]
+    await act(async () => checkbox.props.onChange({ target: { checked: true } }))
+    assert.equal(createButton().props.disabled, false)
+    await act(async () => createButton().props.onClick())
+    assert.equal(calls.filter(call => call.method === 'submit').length, 1)
+    const submitted = calls.find(call => call.method === 'submit').payload
+    assert.equal(submitted.platformId, 'hema'); assert.equal(submitted.accountRef, accountRef); assert.equal(submitted.maxAmountCents, 5290)
+    assert(text(mounted.renderer.toJSON()).includes('10001')); assert.equal(root.findAllByType('a').length, 0)
+    assert.deepEqual(Array.from(calls.find(call => call.method === 'checkout').payload.lineIds), ['321'])
+  } finally { mounted.close() }
+})
+
+test('Hema view uses explicit Taobao sign-in, private account scope and remote product search', async () => {
   const calls = [], ref = '11111111-1111-4111-8111-111111111111', source = '22222222-2222-4222-8222-222222222222', addressRef = 'a'.repeat(64)
   let linked = false
   let failNext = false
@@ -309,7 +343,7 @@ test('Hema view uses explicit Taobao sign-in, private account scope and remote p
     const price = text(root.findByProps({ className: 'waimai-price' }).props.children)
     const view = { platform: '盒马', tabs: root.findByType('nav').findAllByType('button').map(button => text(button.props.children)), loginMethods, stores,
       search: calls.find(call => call.endpoint === 'probeMenu' && call.payload.keyword)?.payload.keyword, price,
-      ordering: root.findAllByType('p').map(node => text(node.props.children)).find(value => value.startsWith('可选规格加购')) }
+      ordering: root.findAllByType('p').map(node => text(node.props.children)).find(value => value.startsWith('选择商品核对实付报价')) }
     assert.deepEqual(view, JSON.parse(await readFile(new URL('./fixtures/hema-view.json', import.meta.url), 'utf8')))
     await act(async () => click('查看规格'))
     const specs = { price: root.findAllByProps({ className: 'waimai-price' }).map(value => text(value.props.children)),

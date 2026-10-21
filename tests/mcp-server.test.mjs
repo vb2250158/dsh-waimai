@@ -133,8 +133,8 @@ test('HTTP tools require a stable merchant and expose platform selection', async
     assert.deepEqual(menu.inputSchema.required, ['shopId'])
 
     const submit = tools.find(tool => tool.name === 'submit_order')
-    assert.deepEqual(Object.keys(submit.inputSchema.properties ?? {}), ['platformId', 'accountRef', 'shopId', 'maxAmount'])
-    assert.deepEqual(submit.inputSchema.required, ['accountRef', 'shopId', 'maxAmount'])
+    assert.deepEqual(Object.keys(submit.inputSchema.properties ?? {}), ['platformId', 'accountRef', 'shopId', 'lineIds', 'maxAmount'])
+    assert.deepEqual(submit.inputSchema.required, ['accountRef', 'maxAmount'])
   } finally {
     await close()
   }

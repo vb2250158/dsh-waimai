@@ -59,3 +59,16 @@ test('Hema agent cart and SKU add use the shared account owner and retain the ac
   const result = await call('add_product_to_cart', { platformId: 'hema', accountRef: ref, productRef: ref, skuId: '7002', quantity: 1, revision, operationRef: ref })
   assert.deepEqual(calls.map(row => row.method), ['cart', 'cartAdd']); assert.equal(calls[1].args.operationRef, ref); assert.equal(result.mutation.state, 'unconfirmed')
 })
+
+test('Hema agent quote uses explicit cart lines and returns a private-address-free confirmation card', async () => {
+  const calls = [], call = tools(async (method, args) => {
+    calls.push({ method, args })
+    return method === 'cart' ? { ...cart, platformId: 'hema' } : { ...quote, platformId: 'hema', shopId: '456' }
+  })
+  const result = await call('submit_order', { platformId: 'hema', accountRef: ref, lineIds: ['321'], maxAmount: 25 })
+  assert.equal(result.platformId, 'hema'); assert.deepEqual(result.lineIds, ['321'])
+  assert(!JSON.stringify(result).includes('private')); assert.deepEqual(calls.map(row => row.method), ['cart', 'checkout'])
+  assert.deepEqual(calls[1].args.lineIds, ['321'])
+  await assert.rejects(call('submit_order', { platformId: 'hema', accountRef: ref, maxAmount: 25 }), error => error.code === 'bad-request')
+  assert.equal(calls.length, 2)
+})

@@ -51,14 +51,15 @@
       "nearbyShops": true,
       "menu": true,
       "menuProbe": true,
-      "checkout": false,
+      "checkout": true,
       "createOrder": false,
       "payment": false,
       "coupons": false,
       "cart": true,
-      "cartAdd": true
+      "cartAdd": true,
+      "manualOrder": true
     },
-    "reason": "ordering-unverified"
+    "reason": "manual-order-only"
   },
   {
     "id": "meituan",
