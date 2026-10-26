@@ -1,5 +1,7 @@
 # dsh-waimai
 
+Supermarket cashier consultation uses the official browser host, web container and WAP source without fabricating device fields. A missing payment timestamp in a pending order remains unconfirmed.
+
 Restaurant POST_STANDARD creation responses unwrap the official payment envelope. Only eleme://cashier is normalized to the official HTTPS cashier. Unrecognized handoffs retain the created order IDs without implying payment success.
 
 For Taobao orders, conversation-card refreshes and agent checkout retain their own unexpired quote references. A refresh does not replace another valid quote. Submission still checks account, address, cart, exact amount and expiry; a consumed quote cannot be submitted twice.
@@ -64,4 +66,4 @@ Version 0.8.5 adds native Taobao Instant Commerce supermarket search, single-SKU
 
 Version 0.8.6 resolves the selected Eleme address to its Taobao address through the platform address API without matching recipient text or changing the selection. Fixed-price items retain the server's final payable amount when the unused coupon component is empty. Missing, ambiguous, or mismatched address links prevent submission. Nearby recommendations are not a full-platform search; lowest-payable claims require actual store checkout comparisons.
 
-Reservation-only supermarket checkout requires a selected delivery time. Set `deliveryPreference: earliest` on `preview_retail_checkout` to choose the earliest currently available platform slot and obtain a repriced quote with its delivery time; the default `platform` preserves the platform selection. After official reconciliation confirms an unknown attempt created no order and the user authorizes a retry, `confirm_order` accepts its `retryOf` and `previousOrderAbsent: true`. Supermarket orders allow one same-cart retry without increasing the amount; both attempts and reservations remain, and supermarket retry chains are rejected. Restaurant orders support the renewed-authorization behavior described above.
+Reservation-only supermarket checkout requires a selected delivery time. Set `deliveryPreference: earliest` on `preview_retail_checkout` to choose the earliest currently available platform slot and obtain a repriced quote with its delivery time; the default `platform` preserves the platform selection. After official reconciliation confirms an unknown attempt created no order and the user authorizes a retry, `confirm_order` accepts its `retryOf` and `previousOrderAbsent: true`. Restaurant and supermarket submissions share the same renewed-authorization rules described above; all attempts and reservations remain.

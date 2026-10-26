@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.14
+
+- Supply the official browser source and container for supermarket cashier consultation.
+- Accept missing payment timestamps for pending orders without inferring payment success.
+- Correct the documented scope of the shared retry authorization rules.
+
 ## 0.8.13
 
 - Decode official restaurant payment envelopes and normalize the supported native cashier destination.
@@ -9,7 +15,7 @@
 
 ## 0.8.12
 
-- Clarify that renewed retry authorization applies to restaurant orders; supermarket retry behavior remains unchanged.
+- Clarify retry documentation. The restaurant and supermarket paths both use the shared submission owner.
 
 ## 0.8.11
 

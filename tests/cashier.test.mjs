@@ -17,10 +17,11 @@ async function fixture() {
     paymentUrl: 'https://r.ele.me/payment?checkoutOrderNos=private-order&returnUrl=https%3A%2F%2Fh5.ele.me%2F&payEntrance=TAOBAO_APPLET' }
   const control = { now: 1000, accountId: 'owner', status: '待支付', amount: '3.00', quote: quote(), transportFailure: false,
     query: { value: { batchStatus: 'U' } }, queryFailure: false,
+    retailConsult: { data: { cashierUrl: 'https://r.ele.me/payment?termNos=synthetic' } },
     submit: { payResult: 'UNKNOWN', payAction: 'H5_URL', targetUrl: 'https://mclient.alipay.com/cashier?private=secret' } }
   let chain = Promise.resolve()
   const login = { get accountId() { return control.accountId }, async requireAccount() {},
-    protocol: { orders: { api: 'orders', client: {} }, cashier: { consult: { api: 'consult' }, submit: { api: 'submit' }, status: { api: 'status' } } },
+    protocol: { orders: { api: 'orders', client: {} }, cashier: { consult: { api: 'consult' }, submit: { api: 'submit' }, status: { api: 'status' }, retailConsult: { api: 'retailConsult' } } },
     diagnostic: value => logs.push(value),
     run(fn) { const p = chain.then(fn); chain = p.catch(() => {}); return p },
     async mtop(spec, data, retry) {
@@ -28,6 +29,7 @@ async function fixture() {
       if (spec.api === 'orders') return { ret: ['SUCCESS::ok'], data: { result: { orderList: [{ orderId: '123', orderAmount: control.amount,
         storeName: '示例店', orderStatusBar: { title: control.status } }] } } }
       if (spec.api === 'submit' && control.transportFailure) throw new Error('private transport url')
+      if (spec.api === 'retailConsult') return { ret: ['SUCCESS::ok'], data: control.retailConsult }
       if (spec.api === 'status') {
         if (control.queryFailure) throw new Error('private query token')
         return { ret: ['SUCCESS::ok'], data: control.query }
@@ -143,6 +145,9 @@ test('official paid timestamp remains distinct from cancellation and must match 
     officialStatus: '等待商家处理取消申请', officialStatusCode: '100006' })
   for (const extra of [{ orderId: '456' }, { eleUserId: 'other' }, { paidAmountActual: 4 }]) assert.throws(() => retailPaymentStatus({ ...raw, ...extra }, order))
   assert.equal(retailPaymentStatus({ ...raw, payTime: 0 }, order).paymentStatus, 'unconfirmed')
+  const { payTime, ...unpaid } = raw
+  assert.deepEqual(retailPaymentStatus({ ...unpaid, statusText: '在线支付', statusCode: '100001' }, order),
+    { paymentStatus: 'unconfirmed', paidAt: null, officialStatus: '在线支付', officialStatusCode: '100001' })
 })
 
 test('third-party verification unwraps the official envelope and rejects unsafe destinations', async () => {
@@ -215,5 +220,20 @@ test('a mismatched cashier query reference is never used to settle the owned ord
     f.control.query.value.batchStatus = 'S'
     assert.equal((await f.cashier.status({ orderRef })).paymentStatus, 'requires-verification')
     assert(!f.calls.some(call => call.api === 'status'))
+  } finally { await f.dispose() }
+})
+
+test('retail payment preparation supplies the official browser context without inventing device identity', async () => {
+  const f = await fixture()
+  try {
+    delete f.order.paymentUrl
+    assert.equal((await f.cashier.prepare({ orderRef })).paymentStatus, 'unpaid')
+    const request = f.calls.find(call => call.api === 'retailConsult').data
+    assert.equal(request.containerType, 'web')
+    assert.deepEqual(JSON.parse(request.riskInfo), { source: 'WAP' })
+    assert.equal(request.orderId, f.order.orderIds[0])
+    assert(!f.calls.some(call => call.api === 'submit'))
+    const protocol = JSON.parse(await readFile(new URL('../lib/login-protocol.json', import.meta.url), 'utf8'))
+    assert.equal(new URL(protocol.cashier.retailConsult.url).host, 'alsc-buy2.ele.me')
   } finally { await f.dispose() }
 })
