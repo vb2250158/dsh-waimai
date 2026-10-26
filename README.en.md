@@ -1,5 +1,7 @@
 # dsh-waimai
 
+Taobao checkout and submission diagnostics share a quote reference and distinguish transport failures, platform responses and quote validation results. Logs retain structured protocol status and amounts without remote messages, order payloads, addresses or payment links. Live purchasing still requires verification with the current account.
+
 Hema delivery store IDs are normalized before address checks, so reordered IDs do not invalidate checkout; changed store membership still stops submission. Order diagnostics retain structured return codes without remote messages, credentials or payment links. Unknown outcomes retain the original attempt and block duplicate submission.
 
 A DeepSeek Harness plugin for Taobao Instant Commerce and Hema. Account-scoped HTTP provides sign-in, addresses, history, products and carts. Hema supports integer SKU additions, verified checkout quotes and confirmed order creation; payment continues in the official app. Meituan and JD are not integrated.

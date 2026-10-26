@@ -106,6 +106,46 @@ const getQuote = async f => {
 }
 const submitArgs = quote => ({ quoteRef: quote.quoteRef, confirmed: true, confirmedCents: quote.totalCents })
 
+test('checkout and submission diagnostics share a quote reference without retaining private response values', async () => {
+  const f = await fixture(), events = [], secret = 'synthetic-private-response'
+  f.service.login.diagnostic = value => events.push(value)
+  try {
+    const quote = await getQuote(f), original = f.service.login.mtop.bind(f.service.login)
+    f.service.login.mtop = async (...args) => args[0].api === 'submit'
+      ? { ret: ['FAIL_SYS_USER_VALIDATE::' + secret], data: { code: 10000, url: 'https://example.test/' + secret } }
+      : original(...args)
+    await assert.rejects(f.trade.submit(submitArgs(quote)), error => error.code === 'order-unknown')
+    const response = events.find(value => value.stage === 'submit-response')
+    assert.deepEqual(response.ret, ['FAIL_SYS_USER_VALIDATE']); assert.equal(response.code, 10000)
+    for (const stage of ['checkout-request', 'checkout-response', 'checkout-verified', 'submit-sent', 'submit-response', 'result-unconfirmed']) {
+      assert.equal(events.find(value => value.stage === stage)?.attemptId, quote.quoteRef)
+    }
+    assert(!JSON.stringify(events).includes(secret))
+    const record = JSON.parse(await readFile(join(f.directory, 'trade-attempts.json'), 'utf8')).attempts[0]
+    assert.equal(record.status, 'unknown')
+  } finally { await f.close() }
+})
+
+test('checkout diagnostics separate transport failures and invalid quotes without creating an order', async () => {
+  for (const scenario of ['transport', 'invalid']) {
+    const f = await fixture(), events = [], original = f.service.login.mtop.bind(f.service.login)
+    f.service.login.diagnostic = value => events.push(value)
+    f.service.login.mtop = async (...args) => {
+      if (args[0].api !== 'checkout') return original(...args)
+      if (scenario === 'transport') throw Error('synthetic-private-transport')
+      return { ret: ['SUCCESS::synthetic-private-response'], data: {} }
+    }
+    try {
+      await assert.rejects(getQuote(f))
+      const stage = scenario === 'transport' ? 'checkout-transport-failed' : 'checkout-invalid'
+      assert.equal(events.find(value => value.stage === stage)?.attemptId, events[0].attemptId)
+      assert(!events.some(value => value.stage === 'checkout-verified'))
+      assert(!f.calls.some(value => value.api === 'submit'))
+      assert(!JSON.stringify(events).includes('synthetic-private'))
+    } finally { await f.close() }
+  }
+})
+
 test('one-item cart change retains unrelated lines and duplicate/stale operations stop before mutation', async () => {
   const f = await fixture()
   try {
