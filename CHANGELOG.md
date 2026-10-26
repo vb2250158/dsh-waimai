@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.9
+
+- Keep unknown creation attempts queryable without requiring a cashier order ID.
+- Reconcile payment only for created attempts and preserve unknown outcomes when no official order matches.
+- Retain bounded numeric platform error codes without remote messages or credentials.
+
 ## 0.8.8
 
 - Add account-scoped official cashier consultation, explicitly authorized one-shot payment initiation and payment status tools.

@@ -20,6 +20,8 @@ test('login diagnostics retain protocol outcomes while rejecting all remote free
   assert.equal(result.cookieCount, 1); assert.equal(result.hasChallenge, true)
   assert.deepEqual(result.sessionFields, ['cookies', 'userId', 'loginServiceExt'])
   assert(!JSON.stringify(result).includes(secret))
+  assert.deepEqual(loginResponseDiagnostic({ ret: ['B_10006_01_18_024::' + secret, 'F-10008-11-10-006::' + secret,
+    'B_10006_01_18_024_' + secret] }).ret, ['B_10006_01_18_024', 'F-10008-11-10-006', 'unrecognized'])
   assert.equal(loginResponseDiagnostic({ content: { data: { qrCodeStatus: 'CONFIRMED' } } }).qrStatus, 'CONFIRMED')
   for (const input of [null, {}, { ret: 'secret', data: { returnValue: 'not-json-secret' } }]) assert.doesNotThrow(() => loginResponseDiagnostic(input))
 })

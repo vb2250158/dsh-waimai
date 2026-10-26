@@ -60,8 +60,35 @@ test('agent payment requires a prepared reference and explicit final amount; ret
   await assert.rejects(call('pay_order', { accountRef: ref, orderRef: ref, paymentRef: ref, confirmedCents: 300, maxAmountCents: 500 }))
   const paid = await call('pay_order', { accountRef: ref, orderRef: ref, paymentRef: ref, confirmed: true, confirmedCents: 300, maxAmountCents: 500 })
   assert.equal(paid.attempts[0].paymentStatus, 'requires-verification'); assert(!JSON.stringify(paid).includes('secret'))
-  await call('get_order_status', { accountRef: ref, orderRef: ref })
+  await call('get_payment_status', { accountRef: ref, orderRef: ref })
   assert.deepEqual(calls.map(c => c.method), ['paymentPrepare', 'paymentSubmit', 'paymentStatus'])
+})
+
+test('unknown order creation remains queryable without invoking payment or claiming absence', async () => {
+  const calls = [], call = tools(async method => {
+    calls.push(method)
+    if (method === 'tradeHistory') return { attempts: [{ orderRef: ref, status: 'unknown', orderIds: [], amountCents: 190, paymentStatus: 'unconfirmed' }] }
+    if (method === 'orders') return { orders: [{ id: 'other', status: '待支付' }] }
+    throw Error('Unknown creation must not enter the cashier')
+  })
+  const result = await call('get_order_status', { accountRef: ref, orderRef: ref })
+  assert.equal(result.attempts[0].status, 'unknown')
+  assert.equal(result.attempts[0].paymentStatus, 'unconfirmed')
+  assert.deepEqual(result.attempts[0].officialOrders, [])
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), JSON.parse(await readFile(new URL('./fixtures/unknown-order-status.json', import.meta.url), 'utf8')))
+  assert.deepEqual(calls, ['tradeHistory', 'orders'])
+})
+
+test('created order status also reconciles payment through its owned reference', async () => {
+  const calls = [], call = tools(async method => {
+    calls.push(method)
+    if (method === 'tradeHistory') return { attempts: [{ orderRef: ref, status: 'created', orderIds: ['123'], amountCents: 190 }] }
+    if (method === 'orders') return { orders: [{ id: '123', status: '配送中' }] }
+    return { orderRef: ref, paymentStatus: 'paid', officialOrders: [{ id: '123', status: '配送中' }] }
+  })
+  const result = await call('get_order_status', { accountRef: ref, orderRef: ref })
+  assert.equal(result.attempts[0].status, 'created'); assert.equal(result.attempts[0].paymentStatus, 'paid')
+  assert.deepEqual(calls, ['tradeHistory', 'orders', 'paymentStatus'])
 })
 
 test('recorded payment results distinguish charge outcomes without private provider data', async () => {

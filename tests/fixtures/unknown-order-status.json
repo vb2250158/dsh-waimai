@@ -1,0 +1,15 @@
+{
+  "view": "payment",
+  "platformId": "taobao",
+  "accountRef": "11111111-1111-4111-8111-111111111111",
+  "attempts": [
+    {
+      "orderRef": "11111111-1111-4111-8111-111111111111",
+      "amountCents": 190,
+      "status": "unknown",
+      "orderIds": [],
+      "paymentStatus": "unconfirmed",
+      "officialOrders": []
+    }
+  ]
+}
