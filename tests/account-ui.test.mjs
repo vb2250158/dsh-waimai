@@ -241,7 +241,9 @@ test('payment cards hide generic cashier links for unresolved attempts and resum
         paymentUrl: retained ? 'https://mclient.alipay.com/cashier?synthetic=1' : 'https://tb.ele.me/app/eleme-newretail-c-h5/order-detail-unicorn/order-detail?opType=pay&isAuto=1' }] }) },
     })
     try {
-      views.push({ state, retained, links: mounted.renderer.root.findAllByType('a').length })
+      views.push({ state, retained, links: mounted.renderer.root.findAllByType('a').length,
+        notices: mounted.renderer.root.findAllByProps({ role: 'status' }).map(node => text(node.props.children)) })
+      if (state !== 'unconfirmed') assert(!text(mounted.renderer.toJSON()).includes('请在官方客户端的订单中继续'))
       assert(!calls.some(method => ['paymentSubmit', 'submit', 'paymentPrepare'].includes(method)))
     } finally { mounted.close() }
   }

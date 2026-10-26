@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.16
+
+- Remove generic continue-payment instructions after a payment attempt and show a distinct notice when its original verification link is unavailable.
+
 ## 0.8.15
 
 - Diagnose payment response actions and rejected verification handoffs with fixed classifications and no provider data.
