@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.12
+
+- Clarify that renewed retry authorization applies to restaurant orders; supermarket retry behavior remains unchanged.
+
 ## 0.8.11
 
 - Allow a renewed, explicitly authorized retry of the latest unknown Taobao creation attempt while preserving history and rejecting stale references.
