@@ -1,5 +1,9 @@
 # dsh-waimai
 
+Each retry after an unknown Taobao creation result requires renewed explicit user authorization and official order reconciliation. retryOf must identify the latest unknown attempt for the same cart with no successor, and the amount cannot increase. Authorization never carries forward automatically; history and reservations remain intact.
+
+Checkout, submission and adjustment send asac in URL query parameters as the official MTOP SDK does. The cashier unwraps official THIRD_PAY handoffs and reconciles terminal results through the payment query API. Query parameters remain in process memory; restarts preserve the payment ledger without retrying charges. These protocol fixes do not establish live order or payment acceptance.
+
 Failure diagnostics also include fixed message-term categories such as address, tableware or coupon, without retaining remote text. Hints do not establish a failure cause or authorize a retry.
 
 get_order_status can inspect an unknown creation attempt without invoking cashier methods that require an order ID. Only a created attempt with one order ID proceeds to payment reconciliation. An empty official match does not confirm absence. Submission diagnostics retain bounded numeric business codes and discard accompanying messages.
@@ -56,4 +60,4 @@ Version 0.8.5 adds native Taobao Instant Commerce supermarket search, single-SKU
 
 Version 0.8.6 resolves the selected Eleme address to its Taobao address through the platform address API without matching recipient text or changing the selection. Fixed-price items retain the server's final payable amount when the unused coupon component is empty. Missing, ambiguous, or mismatched address links prevent submission. Nearby recommendations are not a full-platform search; lowest-payable claims require actual store checkout comparisons.
 
-Reservation-only supermarket checkout requires a selected delivery time. Set `deliveryPreference: earliest` on `preview_retail_checkout` to choose the earliest currently available platform slot and obtain a repriced quote with its delivery time; the default `platform` preserves the platform selection. After official reconciliation confirms an unknown attempt created no order and the user authorizes a retry, `confirm_order` accepts its `retryOf` and `previousOrderAbsent: true`. One same-cart retry is allowed without increasing the amount; both attempts and budget reservations remain, and retry chains are rejected.
+Reservation-only supermarket checkout requires a selected delivery time. Set `deliveryPreference: earliest` on `preview_retail_checkout` to choose the earliest currently available platform slot and obtain a repriced quote with its delivery time; the default `platform` preserves the platform selection. After official reconciliation confirms an unknown attempt created no order and the user authorizes a retry, `confirm_order` accepts its `retryOf` and `previousOrderAbsent: true`. Each latest unknown attempt permits one expressly reauthorized same-cart retry without increasing the amount; all attempts and budget reservations remain.

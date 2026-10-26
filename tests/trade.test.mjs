@@ -15,14 +15,14 @@ const baseLine = { cart_id: 'cart-1', id: 'food-1', sku_id: 'sku-1', food_type: 
 const cartRaw = () => ({ total_quantity: 2, invalid_foods: [], cart: { restaurant: { encrypted_id: 'store-17' }, total: 20, minimum_order_amount: 10 },
   couple_group: [{ cart_item_d_t_o_list: [structuredClone(baseLine), { ...baseLine, cart_id: 'cart-2', id: 'food-2', sku_id: 'sku-2', tb_item_id: 'tb-item-2',
     tb_sku_id: 'tb-sku-2', name: '无需餐具', price: 0, total_price: 0 }] }], tb_order: JSON.stringify({ buyParam: 'synthetic-selection', exParams: '{}' }) })
-function quoteRaw(cart = cartData(cartRaw(), 'store-17')) {
+function quoteRaw(cart = cartData(cartRaw(), 'store-17'), total = 2100) {
   const component = fields => ({ fields, props: { isSubmit: 'true' } })
-  const quantity = cart.display.quantity, total = 2100
+  const quantity = cart.display.quantity
   return { data: {
     trade_checkout_global: component({ userId: '87654', uniqueId: 'synthetic-id', checkoutParamStr: JSON.stringify({
       checkOutBizParam: { address_id: 'uic-77', selectedAdditionalServiceIds: [] }, checkOutItemParam: { encryptedShopId: 'store-17',
         entities: cart.lines.map(item => ({ itemId: item.tb_item_id, skuId: item.tb_sku_id, buyAmount: item.quantity })) } }) }),
-    trade_checkout_order_submit: component({ addressId: 'uic-77', orderTotalFee: total, priceStr: '21', goodsTotalQuantity: quantity, isClosed: false, discountedPrice: 0 }),
+    trade_checkout_order_submit: component({ addressId: 'uic-77', orderTotalFee: total, priceStr: String(total / 100), goodsTotalQuantity: quantity, isClosed: false, discountedPrice: 0 }),
     trade_checkout_subtotal: component({ centPrice: total }),
     trade_checkout_restaurant_info: component({ name: '示例店', totalQuantity: quantity, statusTip: { text: '明天 10:00 开始配送' },
       foodList: cart.lines.map(item => ({ name: item.name, quantity: item.quantity, price: item.price, spec: '' })) }),
@@ -67,7 +67,7 @@ test('payment handoffs accept official HTTPS destinations and never execute paym
 
 async function fixture(options = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'waimai-trade-')), calls = [], raw = cartRaw()
-  let now = 100000, rejectSubmit = false, accountId = '12345', selected = address
+  let now = 100000, rejectSubmit = false, accountId = '12345', selected = address, checkoutTotal = 2100
   let chain = Promise.resolve()
   const login = { protocol: Object.fromEntries(['menuHead', 'menu', 'itemOptions', 'cart', 'checkout', 'submit', 'taobaoIdentity'].map(api => [api, { api }])),
     http: { async storageState() { return { cookies: [{ name: 'unb', domain: '.ele.me', value: '87654' }, { name: 'unb', domain: '.taobao.com', value: '98765' }] } } },
@@ -90,7 +90,7 @@ async function fixture(options = {}) {
         return { ret: ['SUCCESS::ok'], data: structuredClone(raw) }
       }
       if (spec.api === 'taobaoIdentity') return { ret: ['SUCCESS::ok'], data: { userNumId: '98765' } }
-      if (spec.api === 'checkout') return { ret: ['SUCCESS::ok'], data: quoteRaw(cartData(raw, 'store-17')) }
+      if (spec.api === 'checkout') return { ret: ['SUCCESS::ok'], data: quoteRaw(cartData(raw, 'store-17'), checkoutTotal) }
       if (spec.api === 'submit') { if (rejectSubmit) throw Error('timeout'); return { ret: ['SUCCESS::ok'], data: { bizOrderId: '123456', nextUrl: 'https://r.ele.me/payment?synthetic=1' } } }
       throw Error('unexpected endpoint')
     } }
@@ -98,7 +98,7 @@ async function fixture(options = {}) {
     checkReply(raw) { assert(raw.ret.some(value => value.startsWith('SUCCESS::'))) } }
   const trade = new TaobaoTrade(service, { journalDirectory: directory, dryRun: false, now: () => now, ...options })
   return { trade, calls, raw, directory, service, changeAccount: () => { accountId = '999' }, advance: () => { now += 121000 },
-    rejectSubmit: () => { rejectSubmit = true }, close: () => rm(directory, { recursive: true, force: true }) }
+    rejectSubmit: () => { rejectSubmit = true }, setCheckoutTotal: value => { checkoutTotal = value }, close: () => rm(directory, { recursive: true, force: true }) }
 }
 const getQuote = async f => {
   const cart = await f.trade.cart('store-17', address.ref)
@@ -116,7 +116,7 @@ test('an item that cannot be ordered alone reports the platform restriction befo
   } finally { await f.close() }
 })
 
-test('a reconciled unknown order permits one explicit same-cart retry while retaining both attempts', async () => {
+test('each newly authorized retry must name the latest unknown attempt and preserves the complete chain', async () => {
   const f = await fixture()
   try {
     f.rejectSubmit()
@@ -129,9 +129,56 @@ test('a reconciled unknown order permits one explicit same-cart retry while reta
     await assert.rejects(f.trade.submit({ ...retry, retryOf: '11111111-1111-4111-8111-111111111111' }), error => error.code === 'retry-invalid')
     await assert.rejects(f.trade.submit(retry), error => error.code === 'order-unknown')
     const third = await getQuote(f)
-    for (const retryOf of [first.quoteRef, second.quoteRef]) {
-      await assert.rejects(f.trade.submit({ ...submitArgs(third), retryOf, previousOrderAbsent: true, manualConfirmation: true }), error => error.code === 'retry-invalid')
-    }
+    const nextRetry = { ...submitArgs(third), retryOf: second.quoteRef, previousOrderAbsent: true, manualConfirmation: true }
+    await assert.rejects(f.trade.submit({ ...nextRetry, retryOf: first.quoteRef }), error => error.code === 'retry-invalid')
+    await assert.rejects(f.trade.submit({ ...nextRetry, previousOrderAbsent: undefined }), error => error.code === 'retry-invalid')
+    await assert.rejects(f.trade.submit({ ...nextRetry, manualConfirmation: false }), error => error.code === 'retry-invalid')
+    await assert.rejects(f.trade.submit(nextRetry), error => error.code === 'order-unknown')
+    await assert.rejects(f.trade.submit(nextRetry), error => error.code === 'quote-expired')
+    const fourth = await getQuote(f)
+    await assert.rejects(f.trade.submit({ ...nextRetry, ...submitArgs(fourth) }), error => error.code === 'retry-invalid')
+    await assert.rejects(f.trade.submit(submitArgs(fourth)), error => error.code === 'order-unknown')
+    const records = (await f.trade.journal()).attempts
+    assert.equal(records.length, 3)
+    assert.equal(records[1].retryOf, records[0].ref); assert.equal(records[2].retryOf, records[1].ref)
+    assert.deepEqual(records.map(record => record.ref), [first.quoteRef, second.quoteRef, third.quoteRef])
+    assert.equal(f.calls.filter(call => call.api === 'submit').length, 3)
+  } finally { await f.close() }
+})
+
+test('a new retry cannot increase the last attempt amount or exceed the daily reserved budget', async () => {
+  for (const scenario of ['amount', 'budget']) {
+    const f = await fixture({ budget: scenario === 'budget' ? 42 : 0 })
+    try {
+      f.rejectSubmit()
+      const first = await getQuote(f)
+      await assert.rejects(f.trade.submit(submitArgs(first)), error => error.code === 'order-unknown')
+      const second = await getQuote(f)
+      await assert.rejects(f.trade.submit({ ...submitArgs(second), retryOf: first.quoteRef, previousOrderAbsent: true, manualConfirmation: true }), error => error.code === 'order-unknown')
+      if (scenario === 'amount') f.setCheckoutTotal(2101)
+      const third = await getQuote(f)
+      await assert.rejects(f.trade.submit({ ...submitArgs(third), retryOf: second.quoteRef, previousOrderAbsent: true, manualConfirmation: true }),
+        error => error.code === (scenario === 'amount' ? 'retry-invalid' : 'over-budget'))
+      assert.equal((await f.trade.journal()).attempts.length, 2)
+      assert.equal(f.calls.filter(call => call.api === 'submit').length, 2)
+    } finally { await f.close() }
+  }
+})
+
+test('concurrent owners cannot create two successors for the same unknown attempt', async () => {
+  const f = await fixture()
+  try {
+    f.rejectSubmit()
+    const first = await getQuote(f)
+    await assert.rejects(f.trade.submit(submitArgs(first)), error => error.code === 'order-unknown')
+    const otherService = { ...f.service, login: { ...f.service.login, run: operation => operation() } }
+    const other = new TaobaoTrade(otherService, { journalDirectory: f.directory, dryRun: false, now: () => 100000 })
+    const second = await getQuote(f), competing = await getQuote({ trade: other })
+    const results = await Promise.allSettled([f.trade.submit({ ...submitArgs(second), retryOf: first.quoteRef, previousOrderAbsent: true, manualConfirmation: true }),
+      other.submit({ ...submitArgs(competing), retryOf: first.quoteRef, previousOrderAbsent: true, manualConfirmation: true })])
+    assert(results.every(result => result.status === 'rejected'))
+    assert.equal(results.filter(result => result.reason.code === 'order-unknown').length, 1)
+    assert(results.some(result => ['trade-locked', 'retry-invalid'].includes(result.reason.code)))
     const records = (await f.trade.journal()).attempts
     assert.equal(records.length, 2); assert.equal(records[1].retryOf, records[0].ref)
     assert.equal(f.calls.filter(call => call.api === 'submit').length, 2)

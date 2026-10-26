@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { TaobaoCashier, cashierQuote, cashierParameters, cashierResult, providerPaymentUrl, retailPaymentStatus } from '../lib/cashier.js'
+import { TaobaoCashier, cashierQuote, cashierParameters, cashierResult, providerPaymentUrl, retailPaymentStatus, paymentHandoffUrl, cashierPaymentStatus } from '../lib/cashier.js'
 
 const orderRef = '11111111-1111-4111-8111-111111111111'
 const envelope = value => ({ succeeded: true, result: JSON.stringify([value]) })
@@ -16,10 +16,11 @@ async function fixture() {
   const order = { ref: orderRef, accountId: 'owner', status: 'created', orderIds: ['123'], amountCents: 300, merchant: '示例店',
     paymentUrl: 'https://r.ele.me/payment?checkoutOrderNos=private-order&returnUrl=https%3A%2F%2Fh5.ele.me%2F&payEntrance=TAOBAO_APPLET' }
   const control = { now: 1000, accountId: 'owner', status: '待支付', amount: '3.00', quote: quote(), transportFailure: false,
+    query: { value: { batchStatus: 'U' } }, queryFailure: false,
     submit: { payResult: 'UNKNOWN', payAction: 'H5_URL', targetUrl: 'https://mclient.alipay.com/cashier?private=secret' } }
   let chain = Promise.resolve()
   const login = { get accountId() { return control.accountId }, async requireAccount() {},
-    protocol: { orders: { api: 'orders', client: {} }, cashier: { consult: { api: 'consult' }, submit: { api: 'submit' } } },
+    protocol: { orders: { api: 'orders', client: {} }, cashier: { consult: { api: 'consult' }, submit: { api: 'submit' }, status: { api: 'status' } } },
     diagnostic: value => logs.push(value),
     run(fn) { const p = chain.then(fn); chain = p.catch(() => {}); return p },
     async mtop(spec, data, retry) {
@@ -27,6 +28,10 @@ async function fixture() {
       if (spec.api === 'orders') return { ret: ['SUCCESS::ok'], data: { result: { orderList: [{ orderId: '123', orderAmount: control.amount,
         storeName: '示例店', orderStatusBar: { title: control.status } }] } } }
       if (spec.api === 'submit' && control.transportFailure) throw new Error('private transport url')
+      if (spec.api === 'status') {
+        if (control.queryFailure) throw new Error('private query token')
+        return { ret: ['SUCCESS::ok'], data: control.query }
+      }
       return { ret: ['SUCCESS::ok'], data: envelope(spec.api === 'consult' ? control.quote : control.submit) }
     } }
   const trade = { login, journalPath: join(directory, 'trade-attempts.json'), async journal() { return { attempts: [order] } },
@@ -138,4 +143,77 @@ test('official paid timestamp remains distinct from cancellation and must match 
     officialStatus: '等待商家处理取消申请', officialStatusCode: '100006' })
   for (const extra of [{ orderId: '456' }, { eleUserId: 'other' }, { paidAmountActual: 4 }]) assert.throws(() => retailPaymentStatus({ ...raw, ...extra }, order))
   assert.equal(retailPaymentStatus({ ...raw, payTime: 0 }, order).paymentStatus, 'unconfirmed')
+})
+
+test('third-party verification unwraps the official envelope and rejects unsafe destinations', async () => {
+  const f = await fixture()
+  try {
+    f.control.submit = { payResult: 'UNKNOWN', extraMap: { payAction: 'THIRD_PAY' },
+      targetUrl: JSON.stringify({ targetUrl: 'https://mclient.alipay.com/cashier?private=secret' }) }
+    assert.equal((await f.pay(await f.cashier.prepare({ orderRef }))).paymentStatus, 'requires-verification')
+    assert.equal((await f.cashier.history([f.order])).get(orderRef).paymentUrl, 'https://mclient.alipay.com/cashier?private=secret')
+    for (const targetUrl of ['broken', JSON.stringify({ targetUrl: 'https://attacker.test/' }), '{}']) {
+      assert.equal(paymentHandoffUrl({ ...f.control.submit, targetUrl }), null)
+    }
+    assert(!JSON.stringify(await f.cashier.ledger()).includes('secret'))
+  } finally { await f.dispose() }
+})
+
+test('malformed verification links remain unknown instead of presenting an unusable verification step', async () => {
+  const f = await fixture()
+  try {
+    f.control.submit.targetUrl = 'https://attacker.test/'
+    assert.equal((await f.pay(await f.cashier.prepare({ orderRef }))).paymentStatus, 'unknown')
+    assert.equal((await f.cashier.history([f.order])).get(orderRef).paymentUrl, undefined)
+  } finally { await f.dispose() }
+})
+
+test('restaurant verification queries the official payment result and persists success across restart', async () => {
+  const f = await fixture()
+  try {
+    f.control.submit.extraMap = { payAction: 'H5_URL', cashierOrderNo: 'V2_synthetic', requestId: 'private-query-reference' }
+    await f.pay(await f.cashier.prepare({ orderRef }))
+    f.control.query.value.batchStatus = 'S'
+    f.control.status = '商家已接单'
+    const status = await f.cashier.status({ orderRef })
+    assert.equal(status.paymentStatus, 'paid')
+    assert.equal(f.calls.filter(call => call.api === 'status').length, 1)
+    assert.deepEqual(f.calls.find(call => call.api === 'status').data, f.control.submit.extraMap)
+    assert.equal((await f.cashier.ledger()).attempts[0].state, 'paid')
+    assert.equal((await f.cashier.history([f.order])).get(orderRef).paymentUrl, undefined)
+    assert.equal((await new TaobaoCashier(f.trade).status({ orderRef })).paymentStatus, 'paid')
+    assert.equal(f.calls.filter(call => call.api === 'submit').length, 1)
+    for (const output of [status, await f.cashier.ledger(), f.logs]) assert(!JSON.stringify(output).includes('private-query-reference'))
+  } finally { await f.dispose() }
+})
+
+test('pending, failed and unavailable official payment queries do not charge again or infer payment from order text', async () => {
+  for (const mode of ['unknown', 'failed', 'transport', 'invalid']) {
+    const f = await fixture()
+    try {
+      f.control.submit = { payResult: 'UNKNOWN', extraMap: { payAction: 'NEED_QUERY', cashierOrderNo: 'V2_synthetic' } }
+      await f.pay(await f.cashier.prepare({ orderRef }))
+      f.control.status = '订单已完成'
+      if (mode === 'failed') f.control.query.value.batchStatus = 'F'
+      if (mode === 'transport') f.control.queryFailure = true
+      if (mode === 'invalid') f.control.query = {}
+      assert.equal((await f.cashier.status({ orderRef })).paymentStatus, mode === 'failed' ? 'failed' : 'unknown')
+      assert.equal((await f.cashier.ledger()).attempts[0].state, mode === 'failed' ? 'failed' : 'unknown')
+      assert.equal(f.calls.filter(call => call.api === 'submit').length, 1)
+      assert(!JSON.stringify(f.logs).includes('private'))
+    } finally { await f.dispose() }
+  }
+  assert.equal(cashierPaymentStatus({ value: { batchStatus: 'S' } }), 'paid')
+  assert.throws(() => cashierPaymentStatus({ value: { batchStatus: 'SUCCESS' } }), error => error.code === 'payment-status-invalid')
+})
+
+test('a mismatched cashier query reference is never used to settle the owned order', async () => {
+  const f = await fixture()
+  try {
+    f.control.submit.extraMap = { cashierOrderNo: 'different-cashier' }
+    await f.pay(await f.cashier.prepare({ orderRef }))
+    f.control.query.value.batchStatus = 'S'
+    assert.equal((await f.cashier.status({ orderRef })).paymentStatus, 'requires-verification')
+    assert(!f.calls.some(call => call.api === 'status'))
+  } finally { await f.dispose() }
 })

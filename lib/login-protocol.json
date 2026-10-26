@@ -174,8 +174,10 @@
     "appKey": "12574478",
     "jsv": "2.7.2",
     "headers": {
-      "asac": "alscGpdG4bag44EYyJBRPX",
       "x-ele-ua": "RenderWay/h5 AppName/tb channel/miniapp subChannel/miniapp.taobao subSubChannel/miniapp.taobao.et"
+    },
+    "query": {
+      "asac": "alscGpdG4bag44EYyJBRPX"
     }
   },
   "submit": {
@@ -186,8 +188,10 @@
     "appKey": "12574478",
     "jsv": "2.7.2",
     "headers": {
-      "asac": "alscGpdG4bag44EYyJBRPX",
       "x-ele-ua": "RenderWay/h5 AppName/tb channel/miniapp subChannel/miniapp.taobao subSubChannel/miniapp.taobao.et"
+    },
+    "query": {
+      "asac": "alscGpdG4bag44EYyJBRPX"
     }
   },
   "retail": {
@@ -273,12 +277,22 @@
       "appKey": "12574478",
       "jsv": "2.7.2",
       "headers": {
-        "asac": "alscGpdG4bag44EYyJBRPX",
         "x-ele-ua": "RenderWay/h5 AppName/tb channel/miniapp subChannel/miniapp.taobao subSubChannel/miniapp.taobao.et"
+      },
+      "query": {
+        "asac": "alscGpdG4bag44EYyJBRPX"
       }
     }
   },
   "cashier": {
+    "status": {
+      "url": "https://cashier.ele.me/h5/mtop.alsc.payment.pay.query.status/1.0/",
+      "api": "mtop.alsc.payment.pay.query.status",
+      "version": "1.0",
+      "appKey": "12574478",
+      "jsv": "2.7.2",
+      "method": "POST"
+    },
     "consult": {
       "url": "https://cashier.ele.me/h5/mtop.cashierplatform.raw.postcashierconsult4ele/1.0/",
       "api": "mtop.cashierplatform.raw.postCashierConsult4ele",

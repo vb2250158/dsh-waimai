@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.11
+
+- Allow a renewed, explicitly authorized retry of the latest unknown Taobao creation attempt while preserving history and rejecting stale references.
+
+- Align checkout, submission and adjustment query parameters with the official MTOP transport.
+- Decode official third-party payment handoffs and reconcile terminal cashier payment states without repeated charges.
+
 ## 0.8.10
 
 - Include fixed failure-message hints in diagnostics without retaining remote text or changing retry rules.
