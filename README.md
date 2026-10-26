@@ -163,3 +163,7 @@ MIT
 ## 界面语言
 
 插件列表中的名称和描述随 DSH 的中文、英文语言设置切换。
+
+## 商超 Agent 下单
+
+0.8.5 增加淘宝闪购商超原生商品查询、单规格加购和结算工具。Agent 使用 search_retail_products、get_retail_cart、add_retail_product、preview_retail_checkout；用户明确授权购买及预算后使用 confirm_order。报价按平台返回的优惠后含运费实付校验，复用账号、地址、预算和防重复订单记录。当前不支持必选附加属性或多规格商超商品的加购。request_payment 可在聊天卡片中读取当前待付款商超订单的官方入口，链接不进入模型或持久化日志。真实扣款仍在官方收银台完成。

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.5
+
+- Add native supermarket search, single-SKU cart additions and checkout through Agent tools.
+- Allow explicitly authorized quote confirmation through the shared order ledger.
+- Resolve current pending supermarket payment links through the private payment card.
+
+
 ## 0.8.4 — 2026-10-26
 
 - 淘宝闪购结算与提交补齐同一淘宝渠道请求头，修复已爆涨红包在通用网页渠道下少算优惠；只读实测 ¥11 红包、实付 ¥48.20，与官方 App 一致。

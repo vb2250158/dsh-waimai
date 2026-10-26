@@ -188,5 +188,69 @@
       "asac": "alscGpdG4bag44EYyJBRPX",
       "x-ele-ua": "RenderWay/h5 AppName/tb channel/miniapp subChannel/miniapp.taobao subSubChannel/miniapp.taobao.et"
     }
+  },
+  "retail": {
+    "search": {
+      "url": "https://waimai-guide.ele.me/h5/mtop.venus.shopsearchservice.getsearchresult/1.1/",
+      "api": "mtop.venus.ShopSearchService.getSearchResult",
+      "version": "1.1",
+      "appKey": "12574478",
+      "jsv": "2.7.2",
+      "method": "GET",
+      "query": {
+        "ecode": "1",
+        "ttid": "h5@Web__11.3.61"
+      }
+    },
+    "cart": {
+      "url": "https://alsc-buy2.ele.me/h5/mtop.alsc.trade.query.bag/5.0/",
+      "api": "mtop.alsc.trade.query.bag",
+      "version": "5.0",
+      "appKey": "12574478",
+      "jsv": "2.7.2",
+      "method": "GET",
+      "query": {
+        "ecode": "1",
+        "ttid": "h5@Web__11.3.61"
+      }
+    },
+    "add": {
+      "url": "https://alsc-buy2.ele.me/h5/mtop.alsc.trade.addquerybag/5.0/",
+      "api": "mtop.alsc.trade.addQueryBag",
+      "version": "5.0",
+      "appKey": "12574478",
+      "jsv": "2.7.2",
+      "method": "GET",
+      "query": {
+        "ecode": "1",
+        "ttid": "h5@Web__11.3.61"
+      }
+    },
+    "client": {
+      "channel": "PC",
+      "subChannel": "ELE_APP",
+      "nrChannel": "mobile.default",
+      "bizChannel": "mobile.default",
+      "businessType": 0,
+      "version_newretail": "1.0.3",
+      "newStyle": 1,
+      "isH5": true
+    },
+    "checkoutClient": {
+      "businessType": 0,
+      "nrChannel": "miniapp.taobao.et",
+      "useNewAddress": true,
+      "appType": "weex",
+      "isLicenseSelected": true,
+      "channel": 20,
+      "containerType": "web",
+      "subChannel": "WAP_TAOBAO",
+      "sceneCode": 0,
+      "subSubChannel": "miniapp.taobao.et",
+      "isPinTuan": "0",
+      "appVersion": "10.53.21",
+      "bizFEVersion": "3.3.5",
+      "lastBusinessType": 0
+    }
   }
 }
