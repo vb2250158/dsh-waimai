@@ -83,7 +83,7 @@ Agent 的 `search_shops` 支持 `nextCursor` 分页；本页没有关键词匹�
 
 自动任务预览默认开启，不创建订单。手动点餐可在插件页面或会话卡片中获取报价，明确确认商品、配送时间、地址和金额后创建本笔订单，无需关闭全局预览；单笔及每日上限在服务端检查。每日累计包含已创建订单和结果未确认的尝试，不自动因取消或退款返还额度。提交前写入共享本机记录并获取文件锁，不重试创建订单请求；未知结果、相同未变化购物车、重复确认和遗留锁都会阻止再次提交。请先核对官方历史订单，不能用重复提交检查是否成功。
 
-创建成功后显示订单号和限定官方 HTTPS 支付入口，插件不调用扣款或免密支付接口。入口不代表已付款，支付结果以官方订单为准；平台未返回受支持入口时在官方客户端继续。自动任务实际购买和自动扣款仍禁用。Agent 可推荐、选规格、修改指定购物车并生成下单确认卡片，工具调用本身不创建订单；用户点击确认后才提交。2026-10-12 已实测奶茶杯型及必选配料、餐品份量和辣度加购，各增加一件后逐件移除并回读确认恢复；2026-10-11 已真实验证加购、读回、实付报价 ¥31.50 与逐件移除恢复原购物车；订单创建、异常提交和支付入口用模拟响应验证，未创建测试订单或扣款。
+创建成功后，淘宝订单可以用 get_payment_options 读取官方收银台实付和当前付款方式；用户已授权付款时，pay_order 绑定订单、短期付款引用、准确实付和预算发起一次付款。付款前保存独立的 cashier-attempts.json；未知结果、重复确认或重启均不自动重付。仅支持平台当前选择的支付宝方式，不开通免密、信贷或充值。需要验证时，私有卡片提供官方入口；付款参数及链接不进入模型或付款记录。get_payment_status 核对官方订单；商超订单另外验证付款时间、账号和实付，取消或退款状态与付款状态分别显示。未取得付款成功证据时不能报告已付款。自动定时购买仍禁用。
 
 ## Agent 会话点餐
 
@@ -110,7 +110,7 @@ dsh plugin --profile web add --save-exact github:vb2250158/dsh-waimai#<40位提�
 
 模型工具：`list_platforms`、`list_connections`、`get_status`、`prepare_ordering`、`search_shops`、`search_products`、`get_menu`、`get_product_details`、`get_item_options`、`get_cart`、`change_cart`、`show_order`、`preview_checkout`、`submit_order`、`request_payment`、`get_order_status` 和 Host 的 `preview_task`。`list_connections` 只返回平台和本机保存的账号引用，不返回昵称、手机号或凭据；每次使用仍复核会话。浏览器记住上次的平台和各平台账号，刷新或重新进入插件时复核后恢复；仅保存引用，不保存昵称、手机号或登录凭据。浏览器间不同步，清除站点数据后回到默认选择。已移除的账号回到可用默认账号，平台验证或临时查询失败不会改查其他账号。多个账号时，账号工具必须提供对应 `accountRef`，不会按当前页面的选择改变其他调用。`search_shops` 的 `scope` 默认 `nearby`，分页查询已选地址的附近推荐；`recent` 查询最近一页订单店铺，`keyword` 仅筛选当前页结果，不能声称搜索平台全量商家。`get_menu` 要求返回的稳定 `shopId` 和该账号已选地址；盒马还须 `keyword`，后续页原样传回 `nextCursor`。`get_product_details` 用搜索结果的 `productRef` 读取盒马规格。模型结果不包含账号 ID、地址或私人平台分页令牌。淘宝点餐卡片支持用户确认提交；未接入平台返回结构化错误。原有调用迁移见 [0.2.5 迁移说明](MIGRATION-0.2.5.md)。
 
-短信、账号资料、地址、完整历史订单、确认提交与私人支付入口仅在鉴权的 `/waimai-login` RPC 可用，内部端点不注册给模型。模型购物车工具复用相同账号所有者，只返回商品、金额及版本。`preview_checkout` 要求淘宝平台、`accountRef` 和 `shopId`，返回不含地址或支付链接的报价；`submit_order` 用 `accountRef`、`shopId` 和 `maxAmount` 生成预算内的确认卡片；`request_payment` 和 `get_order_status` 用本机订单引用核对官方状态。实际创建需用户在卡片确认，官方付款入口从私人 RPC 读取，不进入模型结果。手机号、验证码、Cookie、地址和购物车摘要不写入共享配置；异常消息不返回网络 URL 或令牌。见 [0.2.16 升级说明](MIGRATION-0.2.16.md)。
+短信、账号资料、地址、完整历史订单、确认提交与私人支付入口仅在鉴权的 `/waimai-login` RPC 可用，内部端点不注册给模型。模型购物车工具复用相同账号所有者，只返回商品、金额及版本。`preview_checkout` 要求淘宝平台、`accountRef` 和 `shopId`，返回不含地址或支付链接的报价；`submit_order` 用 `accountRef`、`shopId` 和 `maxAmount` 生成预算内的确认卡片；`request_payment` 和 `get_order_status` 用本机订单引用核对官方状态。实际创建需明确购买授权，可通过确认卡片或 confirm_order 提交；付款授权和准确金额另由 pay_order 核对。官方付款入口从私人 RPC 读取，不进入模型结果。手机号、验证码、Cookie、地址和购物车摘要不写入共享配置；异常消息不返回网络 URL 或令牌。见 [0.2.16 升级说明](MIGRATION-0.2.16.md)。
 
 ## 配置
 
@@ -166,7 +166,7 @@ MIT
 
 ## 商超 Agent 下单
 
-0.8.5 增加淘宝闪购商超原生商品查询、单规格加购和结算工具。Agent 使用 search_retail_products、get_retail_cart、add_retail_product、preview_retail_checkout；用户明确授权购买及预算后使用 confirm_order。报价按平台返回的优惠后含运费实付校验，复用账号、地址、预算和防重复订单记录。当前不支持必选附加属性或多规格商超商品的加购。request_payment 可在聊天卡片中读取当前待付款商超订单的官方入口，链接不进入模型或持久化日志。真实扣款仍在官方收银台完成。
+0.8.5 增加淘宝闪购商超原生商品查询、单规格加购和结算工具。Agent 使用 search_retail_products、get_retail_cart、add_retail_product、preview_retail_checkout；用户明确授权购买及预算后使用 confirm_order。报价按平台返回的优惠后含运费实付校验，复用账号、地址、预算和防重复订单记录。当前不支持必选附加属性或多规格商超商品的加购。request_payment 可在聊天卡片中读取当前待付款商超订单的官方入口，链接不进入模型或持久化日志。淘宝付款接口见上文 get_payment_options、pay_order 与 get_payment_status；平台额外验证仍在官方窗口完成。
 
 0.8.6 的商超结算通过平台地址接口关联当前已选地址与淘宝地址，不通过收货人文字猜测，也不更换地址。一口价商品没有红包组件时仍使用平台最终实付；地址关联缺失、重复或结算返回不同地址时停止下单。附近推荐店铺查询不等于全平台搜索，未经逐店结算不能宣称最低实付。
 

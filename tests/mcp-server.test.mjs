@@ -3,7 +3,7 @@
  *
  * Starts the real server over stdio and inspects its advertised tools. This
  * checks process startup, tool registration and account-scoped payment inputs.
- * Payment requests identify existing local orders and never accept a charge amount.
+ * Payment requests require an owned order, a prepared reference and confirmed cents.
  *
  * The test never launches a browser: `tools/list` is answered before any tool
  * call, so no window opens and no page is loaded.
@@ -43,6 +43,7 @@ const EXPECTED_TOOLS = [
   'account_select_delivery',
   'account_submit',
   'account_trade_history',
+  'account_payment_status',
   'account_list',
   'account_begin',
   'account_cancel',
@@ -65,6 +66,14 @@ const EXPECTED_TOOLS = [
   'submit_order',
   'get_order_status',
   'request_payment',
+  'search_retail_products',
+  'get_retail_cart',
+  'add_retail_product',
+  'preview_retail_checkout',
+  'confirm_order',
+  'get_payment_options',
+  'pay_order',
+  'get_payment_status',
 ]
 
 /**
@@ -150,6 +159,7 @@ test('preview status exposes interactive ordering without automatic payment', as
     const value = JSON.parse((await client.callTool({ name: 'get_status', arguments: {} })).content[0].text)
     assert.equal(value.data.dryRun, true); assert.equal(value.data.orderingAvailable, true)
     assert.equal(value.data.automaticPaymentAvailable, false); assert.equal(value.data.paymentMode, 'official-cashier')
+    assert.equal(value.data.paymentInitiationAvailable, true)
     const { tools } = await client.listTools()
     const submit = tools.find(tool => tool.name === 'submit_order')
     assert.match(submit.description, /不创建订单或扣款/)

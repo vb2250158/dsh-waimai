@@ -68,7 +68,8 @@
     "login.m.taobao.com",
     "passport.taobao.com",
     "h5api.m.taobao.com",
-    "alsc-buy2.ele.me"
+    "alsc-buy2.ele.me",
+    "cashier.ele.me"
   ],
   "phoneCode": "86",
   "countryCode": "CN",
@@ -197,7 +198,10 @@
       "appKey": "12574478",
       "jsv": "2.7.2",
       "method": "POST",
-      "query": { "ecode": "1", "ttid": "h5@Web__11.3.61" }
+      "query": {
+        "ecode": "1",
+        "ttid": "h5@Web__11.3.61"
+      }
     },
     "search": {
       "url": "https://waimai-guide.ele.me/h5/mtop.venus.shopsearchservice.getsearchresult/1.1/",
@@ -272,6 +276,40 @@
         "asac": "alscGpdG4bag44EYyJBRPX",
         "x-ele-ua": "RenderWay/h5 AppName/tb channel/miniapp subChannel/miniapp.taobao subSubChannel/miniapp.taobao.et"
       }
+    }
+  },
+  "cashier": {
+    "consult": {
+      "url": "https://cashier.ele.me/h5/mtop.cashierplatform.raw.postcashierconsult4ele/1.0/",
+      "api": "mtop.cashierplatform.raw.postCashierConsult4ele",
+      "version": "1.0",
+      "appKey": "12574478",
+      "jsv": "2.7.2",
+      "method": "POST"
+    },
+    "submit": {
+      "url": "https://cashier.ele.me/h5/mtop.cashierplatform.raw.submitpay4ele/1.0/",
+      "api": "mtop.cashierplatform.raw.submitPay4ele",
+      "version": "1.0",
+      "appKey": "12574478",
+      "jsv": "2.7.2",
+      "method": "POST"
+    },
+    "retailConsult": {
+      "url": "https://waimai-guide.ele.me/h5/mtop.me.ele.newretail.trade.order.consultcashier/1.0/",
+      "api": "mtop.me.ele.newretail.trade.order.consultCashier",
+      "version": "1.0",
+      "appKey": "12574478",
+      "jsv": "2.7.2",
+      "method": "POST"
+    },
+    "retailDetail": {
+      "url": "https://waimai-guide.ele.me/h5/mtop.me.ele.newretail.trade.order.getorderdetail/1.0/",
+      "api": "mtop.me.ele.newretail.trade.order.getOrderDetail",
+      "version": "1.0",
+      "appKey": "12574478",
+      "jsv": "2.7.2",
+      "method": "POST"
     }
   }
 }

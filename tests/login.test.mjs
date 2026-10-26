@@ -280,12 +280,14 @@ test('login HTTP channel authorizes, validates RPC envelopes and excludes secret
     assert.equal((await (await call('selectDelivery', { ...delivery, platformId: 'taobao' })).json()).result.ok, false)
     assert.equal((await (await call('selectDelivery', { ...delivery, selectedId: '0,0' })).json()).result.ok, false)
     const retry = { ...delivery, deliveryRef: undefined, confirmed: true, confirmedCents: 5290, manualConfirmation: true, retryOf: owner.accountRef, previousOrderAbsent: true }
-    for (const payload of [{ ...retry, platformId: 'taobao' }, { ...retry, manualConfirmation: undefined }, { ...retry, retryOf: undefined }, { ...retry, previousOrderAbsent: undefined }]) {
+    for (const payload of [{ ...retry, manualConfirmation: undefined }, { ...retry, retryOf: undefined }, { ...retry, previousOrderAbsent: undefined }]) {
       assert.equal((await (await call('submit', payload)).json()).result.ok, false)
     }
     assert.equal(called, 6)
     assert.equal((await (await call('selectDelivery', delivery)).json()).result.ok, true)
     assert.equal((await (await call('submit', retry)).json()).result.ok, true)
     assert.equal(called, 8)
+    assert.equal((await (await call('submit', { ...retry, platformId: 'taobao' })).json()).result.ok, true)
+    assert.equal(called, 9)
   } finally { server.closeAllConnections(); await new Promise(resolve=>server.close(resolve)) }
 })

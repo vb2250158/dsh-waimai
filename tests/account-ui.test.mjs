@@ -203,7 +203,7 @@ test('a recorded menu tool renders actionable dishes and keeps private ordering 
 
 test('payment cards read official order states without requiring a delivery address or creating an order', async () => {
   const accountRef = '11111111-1111-4111-8111-111111111111', calls = []
-  const mounted = await mount({ async call(_channel, method, payload) { calls.push({ method, payload }); if (method === 'profile') return ok(profile); if (method === 'orders') return ok({ accountId: profile.id, orders: [{ id: '123', status: '已支付' }] }); throw Error('Unexpected request: ' + method) } }, {
+  const mounted = await mount({ async call(_channel, method, payload) { calls.push({ method, payload }); if (method === 'profile') return ok(profile); if (method === 'orders') return ok({ accountId: profile.id, orders: [{ id: '123', status: '已支付' }] }); if (method === 'paymentStatus') return ok({ accountId: profile.id, orderRef: accountRef, paymentStatus: 'paid', officialOrders: [{ id: '123', status: '已支付' }] }); throw Error('Unexpected request: ' + method) } }, {
     tool: { name: 'mcp__waimai__request_payment', props: { phase: 'result', sessionId: 'payment-session', callId: 'payment-call', block: { content: [{ type: 'text', text: JSON.stringify({ success: true,
       data: { view: 'payment', platformId: 'taobao', accountRef, attempts: [{ orderRef: accountRef }] } }) }] } } },
     addresses: async () => { throw Error('Payment must not request addresses') },
@@ -213,8 +213,13 @@ test('payment cards read official order states without requiring a delivery addr
   try {
     assert(text(mounted.renderer.toJSON()).includes('官方订单状态: 已支付'))
     assert(!text(mounted.renderer.toJSON()).includes('付款待确认'))
+    assert(text(mounted.renderer.toJSON()).includes('付款已确认'))
+    assert.deepEqual({ statuses: mounted.renderer.root.findAllByProps({ role: 'status' }).map(node => text(node.props.children)),
+      paymentLinks: mounted.renderer.root.findAllByType('a').length },
+    JSON.parse(await readFile(new URL('./fixtures/payment-paid-view.json', import.meta.url), 'utf8')))
+    assert.equal(mounted.renderer.root.findAllByType('a').length, 0)
     assert(calls.every(call => call.payload.accountRef === accountRef))
-    assert.deepEqual(calls.map(call => call.method).sort(), ['orders', 'profile', 'tradeHistory'])
+    assert.deepEqual(calls.map(call => call.method).sort(), ['orders', 'paymentStatus', 'profile', 'tradeHistory'])
   } finally { mounted.close() }
 })
 

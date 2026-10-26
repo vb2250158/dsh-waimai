@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { z } from 'zod'
+import { readFile } from 'node:fs/promises'
 import { registerAgentOrdering } from '../lib/agent-ordering.js'
 
 const ref = '11111111-1111-4111-8111-111111111111', address = 'a'.repeat(64), revision = 'b'.repeat(64)
@@ -49,6 +50,28 @@ test('payment cards project official order status without credentials or payment
   assert(!JSON.stringify(result).includes('secret')); assert.equal(result.attempts[0].officialOrders.length, 1)
   assert.equal(result.attempts[0].officialOrders[0].status, '待支付'); assert.equal(result.attempts[0].paymentStatus, 'unconfirmed')
   assert.deepEqual(calls, ['tradeHistory', 'orders'])
+})
+
+test('agent payment requires a prepared reference and explicit final amount; returns no provider credentials', async () => {
+  const calls = [], call = tools(async (method, args) => { calls.push({ method, args }); return { orderRef: ref, paymentRef: ref,
+    amountCents: 300, paymentStatus: method === 'paymentSubmit' ? 'requires-verification' : 'unpaid', paymentUrl: 'https://mclient.alipay.com/?private=secret' } })
+  const prepared = await call('get_payment_options', { accountRef: ref, orderRef: ref })
+  assert(!JSON.stringify(prepared).includes('secret'))
+  await assert.rejects(call('pay_order', { accountRef: ref, orderRef: ref, paymentRef: ref, confirmedCents: 300, maxAmountCents: 500 }))
+  const paid = await call('pay_order', { accountRef: ref, orderRef: ref, paymentRef: ref, confirmed: true, confirmedCents: 300, maxAmountCents: 500 })
+  assert.equal(paid.attempts[0].paymentStatus, 'requires-verification'); assert(!JSON.stringify(paid).includes('secret'))
+  await call('get_order_status', { accountRef: ref, orderRef: ref })
+  assert.deepEqual(calls.map(c => c.method), ['paymentPrepare', 'paymentSubmit', 'paymentStatus'])
+})
+
+test('recorded payment results distinguish charge outcomes without private provider data', async () => {
+  const recorded = []
+  for (const state of ['requires-verification', 'unknown', 'failed', 'paid']) {
+    const call = tools(async () => ({ orderRef: ref, orderIds: ['123'], amountCents: 190, merchant: '示例店',
+      paymentStatus: state, accountId: 'private-owner', paymentUrl: 'https://mclient.alipay.com/?private=secret' }))
+    recorded.push(await call('get_payment_status', { accountRef: ref, orderRef: ref }))
+  }
+  assert.deepEqual(recorded, JSON.parse(await readFile(new URL('./fixtures/payment-outcomes.json', import.meta.url), 'utf8')))
 })
 
 test('Hema agent cart and SKU add use the shared account owner and retain the action identity', async () => {

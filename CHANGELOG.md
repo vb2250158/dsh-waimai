@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.8
+
+- Add account-scoped official cashier consultation, explicitly authorized one-shot payment initiation and payment status tools.
+- Persist payment attempts before submission; reject changed totals, duplicate attempts and automatic retries after unknown outcomes.
+- Keep verification links in authenticated UI only and show paid, verification-required, unknown and failed states in conversation cards.
+- Reconcile supermarket payment timestamps independently of cancellation status; live payment acceptance remains pending.
+- Report restaurant items that cannot be ordered alone with an actionable error.
+
 ## 0.8.7
 
 - Require a selected delivery time for reservation-only supermarket checkout; explicit earliest delivery selection reprices through the platform.

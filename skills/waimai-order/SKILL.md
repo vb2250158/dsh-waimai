@@ -6,7 +6,7 @@ whenToUse: 用户希望点外卖、推荐餐品、下单或查看订单付款状
 
 # 会话点餐
 
-先调用 list_platforms、get_status，使用用户指定平台；未指定时使用配置默认平台。淘宝闪购和盒马支持 Agent 购物车、报价及用户确认下单卡片；自动任务购买、自动扣款、美团和京东尚未接入。createOrder 能力表示自动创建，不能据此声称会话确认下单不可用；查看 manualOrderingAvailable 和 orderingAvailable。
+先调用 list_platforms、get_status，使用用户指定平台；未指定时使用配置默认平台。淘宝闪购和盒马支持 Agent 购物车、报价及用户确认下单卡片；自动任务购买、美团和京东尚未接入。淘宝可按明确付款授权调用 pay_order，但平台可能要求用户验证；不能承诺免验证完成。createOrder 能力表示自动创建，不能据此声称会话确认下单不可用；查看 manualOrderingAvailable 和 orderingAvailable。
 
 list_connections 返回已保存的账号引用。每次账号工具明确传 accountRef；多个账号不能猜测。同一账号须 prepare_ordering 复核登录及所选配送地址。缺登录或地址时引导「插件 → dsh-waimai → 账号与地址」；不索取手机号、验证码、地址文本或 Cookie 到聊天。
 
@@ -20,7 +20,7 @@ get_menu 使用返回的稳定 shopId，读取当前菜品、标价和库存。�
 
 用户要求下单时，submit_order 传 accountRef、shopId、maxAmount（元），读取真实结算实付并展示确认卡片；预算只会收紧配置单笔上限。工具调用本身不创建订单或扣款。用户在会话中核对餐品、地址、配送时间、优惠和实付，勾选确认后点击创建；全局自动任务预览无需关闭。preview_checkout 可只读获取当前购物车报价，金额字段单位为分；有效报价不能当作已下单。
 
-创建成功后用 request_payment 展示本机订单对应的官方付款入口，用户在官方收银台完成付款。付款 URL 由私人鉴权界面读取，不进入模型。get_order_status 用 accountRef 和可选 orderRef 查询本机记录及对应官方状态；HTTP 200、支付入口或本机 paymentStatus: unconfirmed 不能声称已付款。订单结果未知时先核对官方订单，保留尝试与预算占用，不重复提交。平台要求额外验证时由用户在官方窗口完成。
+淘宝订单创建成功且用户已授权付款时，先 get_payment_options 取得当前官方实付与短期 paymentRef，再 pay_order 传原 orderRef、paymentRef、confirmed:true、准确 confirmedCents 和本次 maxAmountCents。仅调用一次，不因 unknown、超时、页面刷新或重启重复付款。requires-verification 时使用 request_payment 展示官方验证卡片，由用户完成平台身份验证；支付参数和链接仅由私人界面读取。get_payment_status 核对官方结果，paid 才能说已付款，订单取消状态另行报告。失败不自动重付，也不另建订单。盒马付款仍在官方客户端完成。
 
 盒马使用 get_menu 的 keyword 搜索商品，get_product_details 核对 productRef 对应的规格；用户可在会话弹窗选择 SKU 与整数数量加购。Agent 先 get_cart(platformId: hema) 读取 revision，再 add_product_to_cart 传 productRef、skuId、quantity、revision 和固定 operationRef。未知结果只 get_cart 回读；同一操作不重新分配 operationRef，不重试修改。保留其他商品和勾选状态，称重及跨平台商品的加购方式未确认时停止。
 
@@ -28,4 +28,4 @@ get_menu 使用返回的稳定 shopId，读取当前菜品、标价和库存。�
 
 商超原生目录：餐饮菜单返回空不能判为缺货。使用 search_retail_products 查询已确认的 shopId 与商品名，get_retail_cart 读取原生购物车；add_retail_product 使用真实 productRef、revision、固定 operationRef 和数量，当前只支持无必选附加属性的单规格商品。preview_retail_checkout 返回真实优惠后含运费 totalCents、couponCents、quoteRef 及到期时间，maxAmount 仍受配置单笔上限约束。退款后的红包是否可用以新报价为准。
 
-用户已明确授权商品、数量和预算时，可以调用 confirm_order，传新鲜 quoteRef、confirmed:true、准确 confirmedCents 和用户 maxAmountCents，直接创建一次真实订单；不得对仅咨询价格或自动后台任务使用此确认。结果未知时只查订单，不能重试确认。创建后 request_payment 展示官方付款入口，支付链接仅由私人界面即时查询；链接不代表已付款，仍按官方订单状态核对。
+用户已明确授权商品、数量和预算时，可以调用 confirm_order，传新鲜 quoteRef、confirmed:true、准确 confirmedCents 和用户 maxAmountCents，直接创建一次真实订单；不得对仅咨询价格或自动后台任务使用此确认。结果未知时只查订单，不能重试确认。创建后按上述 get_payment_options → pay_order → get_payment_status 流程处理已授权的淘宝付款；需要额外验证时展示 request_payment 卡片。

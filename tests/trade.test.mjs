@@ -106,6 +106,16 @@ const getQuote = async f => {
 }
 const submitArgs = quote => ({ quoteRef: quote.quoteRef, confirmed: true, confirmedCents: quote.totalCents })
 
+test('an item that cannot be ordered alone reports the platform restriction before creation', async () => {
+  const f = await fixture(), original = f.service.login.mtop.bind(f.service.login)
+  f.service.login.mtop = (spec, ...args) => spec.api === 'checkout'
+    ? Promise.resolve({ ret: ['B_10006_01_18_024::synthetic-private-platform-message'] }) : original(spec, ...args)
+  try {
+    await assert.rejects(getQuote(f), error => error.code === 'item-requires-other-goods' && !error.message.includes('private'))
+    assert(!f.calls.some(call => call.api === 'submit'))
+  } finally { await f.close() }
+})
+
 test('a reconciled unknown order permits one explicit same-cart retry while retaining both attempts', async () => {
   const f = await fixture()
   try {
