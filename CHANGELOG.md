@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.15
+
+- Diagnose payment response actions and rejected verification handoffs with fixed classifications and no provider data.
+- Hide generic payment links after an attempt; verification resumes only its original private handoff.
+- Expose whether the original cashier query is still available and retain unknown payment outcomes across cancellation and restarts.
+
 ## 0.8.14
 
 - Supply the official browser source and container for supermarket cashier consultation.

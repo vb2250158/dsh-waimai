@@ -1,0 +1,8 @@
+[
+  { "state": "unknown", "retained": false, "links": 0 },
+  { "state": "paid", "retained": false, "links": 0 },
+  { "state": "failed", "retained": false, "links": 0 },
+  { "state": "requires-verification", "retained": false, "links": 0 },
+  { "state": "requires-verification", "retained": true, "links": 1 },
+  { "state": "unconfirmed", "retained": false, "links": 1 }
+]

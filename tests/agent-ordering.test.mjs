@@ -13,6 +13,19 @@ function tools(dispatch) {
 const cart = { platformId: 'taobao', accountId: 'private-account', addressRef: address, shopId: 'store-17', revision, items: [], quantity: 1 }
 const quote = { ...cart, address: { address: 'private address' }, quoteRef: '22222222-2222-4222-8222-222222222222', merchant: '示例店', totalCents: 2100, maxOrderCents: 3500 }
 
+test('payment status exposes lost query availability without changing an unknown payment into a cancellation result', async () => {
+  const calls = [], call = tools(async method => {
+    calls.push(method)
+    return { accountId: 'private-account', orderRef: ref, paymentStatus: 'unknown', paymentQueryAvailable: false,
+      officialOrders: [{ id: '123', status: '已取消' }] }
+  })
+  const result = await call('get_payment_status', { accountRef: ref, orderRef: ref })
+  assert.deepEqual(result.attempts, [{ orderRef: ref, paymentStatus: 'unknown', paymentQueryAvailable: false,
+    officialOrders: [{ id: '123', status: '已取消' }] }])
+  assert.deepEqual(calls, ['paymentStatus'])
+  assert(!JSON.stringify(result).includes('private'))
+})
+
 test('agent submit returns a capped confirmation card without calling the private submit or exposing an address', async () => {
   const calls = [], call = tools(async (method, args) => { calls.push({ method, args }); return method === 'cart' ? cart : quote })
   const result = await call('submit_order', { accountRef: ref, shopId: 'store-17', maxAmount: 25 })

@@ -223,6 +223,31 @@ test('payment cards read official order states without requiring a delivery addr
   } finally { mounted.close() }
 })
 
+test('payment cards hide generic cashier links for unresolved attempts and resume only the retained verification handoff', async () => {
+  const accountRef = '11111111-1111-4111-8111-111111111111', views = []
+  for (const [state, retained] of [['unknown', false], ['paid', false], ['failed', false], ['requires-verification', false], ['requires-verification', true], ['unconfirmed', false]]) {
+    const calls = [], officialOrders = [{ id: '123', status: '等待支付' }]
+    const mounted = await mount({ async call(_channel, method) {
+      calls.push(method)
+      if (method === 'profile') return ok(profile)
+      if (method === 'orders') return ok({ accountId: profile.id, orders: officialOrders })
+      if (method === 'paymentStatus') return ok({ accountId: profile.id, orderRef: accountRef, paymentStatus: state, officialOrders })
+      throw Error('Unexpected request: ' + method)
+    } }, {
+      tool: { name: 'mcp__waimai__request_payment', props: { phase: 'result', sessionId: 'payment-session', callId: 'payment-call', block: { content: [{ type: 'text', text: JSON.stringify({ success: true,
+        data: { view: 'payment', platformId: 'taobao', accountRef, attempts: [{ orderRef: accountRef }] } }) }] } } },
+      trade: async method => { calls.push(method); return ok({ accountId: profile.id, attempts: [{ orderRef: accountRef, merchant: '示例店', amountCents: 2100,
+        status: 'created', orderIds: ['123'], paymentStatus: state === 'unknown' ? 'unconfirmed' : state, paymentHandoffAvailable: retained,
+        paymentUrl: retained ? 'https://mclient.alipay.com/cashier?synthetic=1' : 'https://tb.ele.me/app/eleme-newretail-c-h5/order-detail-unicorn/order-detail?opType=pay&isAuto=1' }] }) },
+    })
+    try {
+      views.push({ state, retained, links: mounted.renderer.root.findAllByType('a').length })
+      assert(!calls.some(method => ['paymentSubmit', 'submit', 'paymentPrepare'].includes(method)))
+    } finally { mounted.close() }
+  }
+  assert.deepEqual(views, JSON.parse(await readFile(new URL('./fixtures/payment-handoff-view.json', import.meta.url), 'utf8')))
+})
+
 test('the chat checkout card refreshes its quote and requires the user to confirm the bounded amount during automation preview', async () => {
   const accountRef = '11111111-1111-4111-8111-111111111111', addressRef = 'a'.repeat(64), revision = 'b'.repeat(64), calls = []
   const display = { platformId: 'taobao', shopId: 'store-17', revision, items: [{ ref: 'c'.repeat(64), name: '示例饭', quantity: 1, priceCents: 2000, totalCents: 2000 }], quantity: 1, invalidCount: 0, totalCents: 2100 }

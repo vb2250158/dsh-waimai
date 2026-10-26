@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { TaobaoCashier, cashierQuote, cashierParameters, cashierResult, providerPaymentUrl, retailPaymentStatus, paymentHandoffUrl, cashierPaymentStatus } from '../lib/cashier.js'
+import { TaobaoCashier, cashierQuote, cashierParameters, cashierResult, providerPaymentUrl, retailPaymentStatus, paymentHandoffUrl, cashierPaymentStatus, paymentResponseDiagnostic } from '../lib/cashier.js'
 
 const orderRef = '11111111-1111-4111-8111-111111111111'
 const envelope = value => ({ succeeded: true, result: JSON.stringify([value]) })
@@ -169,7 +169,11 @@ test('malformed verification links remain unknown instead of presenting an unusa
   try {
     f.control.submit.targetUrl = 'https://attacker.test/'
     assert.equal((await f.pay(await f.cashier.prepare({ orderRef }))).paymentStatus, 'unknown')
-    assert.equal((await f.cashier.history([f.order])).get(orderRef).paymentUrl, undefined)
+    assert.equal((await f.cashier.history([f.order])).get(orderRef).paymentUrl, null)
+    assert.equal((await f.cashier.history([f.order])).get(orderRef).paymentHandoffAvailable, false)
+    assert.deepEqual(f.logs.find(value => value.stage === 'payment-response'), { group: 'waimai-order', attemptId: (await f.cashier.ledger()).attempts[0].ref,
+      stage: 'payment-response', payResult: 'UNKNOWN', payAction: 'H5_URL', handoffAccepted: false,
+      handoffRejected: true, handoffReason: 'unapproved-destination' })
   } finally { await f.dispose() }
 })
 
@@ -185,7 +189,7 @@ test('restaurant verification queries the official payment result and persists s
     assert.equal(f.calls.filter(call => call.api === 'status').length, 1)
     assert.deepEqual(f.calls.find(call => call.api === 'status').data, f.control.submit.extraMap)
     assert.equal((await f.cashier.ledger()).attempts[0].state, 'paid')
-    assert.equal((await f.cashier.history([f.order])).get(orderRef).paymentUrl, undefined)
+    assert.equal((await f.cashier.history([f.order])).get(orderRef).paymentUrl, null)
     assert.equal((await new TaobaoCashier(f.trade).status({ orderRef })).paymentStatus, 'paid')
     assert.equal(f.calls.filter(call => call.api === 'submit').length, 1)
     for (const output of [status, await f.cashier.ledger(), f.logs]) assert(!JSON.stringify(output).includes('private-query-reference'))
@@ -235,5 +239,52 @@ test('retail payment preparation supplies the official browser context without i
     assert(!f.calls.some(call => call.api === 'submit'))
     const protocol = JSON.parse(await readFile(new URL('../lib/login-protocol.json', import.meta.url), 'utf8'))
     assert.equal(new URL(protocol.cashier.retailConsult.url).host, 'alsc-buy2.ele.me')
+  } finally { await f.dispose() }
+})
+
+test('payment diagnostics contain only fixed action and handoff classifications', () => {
+  const cases = [
+    [{ payResult: 'UNKNOWN', payAction: 'NEED_QUERY', extraMap: { privateToken: 'secret' } }, 'query-only'],
+    [{ payResult: 'UNKNOWN', payAction: 'H5_URL', targetUrl: 'https://mclient.alipay.com/?secret=private' }, 'browser-url'],
+    [{ payResult: 'UNKNOWN', payAction: 'THIRD_PAY', targetUrl: '{private' }, 'invalid-third-party-payload'],
+    [{ payResult: 'UNKNOWN', payAction: 'THIRD_PAY', targetUrl: JSON.stringify({ targetUrl: 'https://attacker.test/?secret=private' }) }, 'unapproved-destination'],
+    [{ payResult: 'UNKNOWN', payAction: 'ALIPAY_SDK', targetUrl: 'private-sdk-secret' }, 'native-sdk'],
+    [{ payResult: 'UNKNOWN', payAction: 'H5_URL' }, 'missing-target'],
+    [{ payResult: 'UNKNOWN', payAction: 'private-action-secret', targetUrl: 'private-target' }, 'unsupported-action'],
+    [{ payResult: 'private-result-secret' }, 'unrecognized-result'],
+  ]
+  for (const [result, reason] of cases) {
+    const diagnostic = paymentResponseDiagnostic(result)
+    assert.equal(diagnostic.handoffReason, reason)
+    for (const privateValue of ['private', 'secret', 'https:', 'attacker']) assert(!JSON.stringify(diagnostic).includes(privateValue))
+  }
+})
+
+test('a restarted verification attempt suppresses generic cashier links when its private handoff is gone', async () => {
+  const f = await fixture()
+  try {
+    await f.pay(await f.cashier.prepare({ orderRef }))
+    const before = (await f.cashier.history([f.order])).get(orderRef)
+    assert.equal(before.paymentHandoffAvailable, true)
+    const after = (await new TaobaoCashier(f.trade).history([f.order])).get(orderRef)
+    assert.deepEqual(after, { paymentStatus: 'requires-verification', paymentUrl: null, paymentHandoffAvailable: false })
+    assert.equal(f.calls.filter(call => call.api === 'submit').length, 1)
+  } finally { await f.dispose() }
+})
+
+test('restart loses pending payment query parameters without interpreting order cancellation as payment failure', async () => {
+  const f = await fixture()
+  try {
+    f.control.submit = { payResult: 'UNKNOWN', extraMap: { payAction: 'NEED_QUERY', cashierOrderNo: 'V2_synthetic', requestId: 'private-query-reference' } }
+    await f.pay(await f.cashier.prepare({ orderRef }))
+    assert.equal((await f.cashier.status({ orderRef })).paymentQueryAvailable, true)
+    f.control.status = '已取消'
+    const status = await new TaobaoCashier(f.trade).status({ orderRef })
+    assert.equal(status.paymentStatus, 'unknown')
+    assert.equal(status.paymentQueryAvailable, false)
+    assert.equal(status.officialOrders[0].status, '已取消')
+    assert.equal(f.calls.filter(call => call.api === 'status').length, 1)
+    assert.equal(f.calls.filter(call => call.api === 'submit').length, 1)
+    assert(!JSON.stringify(await f.cashier.ledger()).includes('private-query-reference'))
   } finally { await f.dispose() }
 })

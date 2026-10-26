@@ -1,5 +1,9 @@
 # dsh-waimai
 
+Payment diagnostics record only fixed result, action and handoff classifications, never payment URLs, SDK payloads or extraMap contents. Unknown, paid and failed attempts hide generic payment links. Verification can resume only through the original handoff retained in memory; losing that handoff does not expose an automatic-payment order page or authorize another payment request. These changes do not resolve an existing unknown payment outcome.
+
+Payment status includes paymentQueryAvailable when the current account's original cashier query parameters remain in this process and the payment is not terminal. A false value after restart does not mean that the original payment was queried or that no charge occurred. Official order cancellation remains separate from an unknown payment result. Query parameters and verification destinations never enter the ledger.
+
 Supermarket cashier consultation uses the official browser host, web container and WAP source without fabricating device fields. A missing payment timestamp in a pending order remains unconfirmed.
 
 Restaurant POST_STANDARD creation responses unwrap the official payment envelope. Only eleme://cashier is normalized to the official HTTPS cashier. Unrecognized handoffs retain the created order IDs without implying payment success.
