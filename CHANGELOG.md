@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.6
+
+- Resolve the selected delivery address through the platform's Eleme-to-Taobao address link for merchant delivery.
+- Accept fixed-price checkout responses whose unused coupon component has no fields; preserve the server's final payable amount.
+- Reject missing or ambiguous address links and quotes returning a different linked address before creating an order.
+
 ## 0.8.5
 
 - Add native supermarket search, single-SKU cart additions and checkout through Agent tools.

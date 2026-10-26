@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { gzipSync, gunzipSync } from 'node:zlib'
-import { retailCartData, retailCheckoutData, RetailTrade } from '../lib/retail-trade.js'
+import { retailAddressLink, retailCartData, retailCheckoutData, RetailTrade } from '../lib/retail-trade.js'
 import { registerAgentOrdering } from '../lib/agent-ordering.js'
 import { z } from 'zod'
 import { retailPaymentDestination } from '../lib/trade-data.js'
@@ -10,7 +10,7 @@ const zip = value => gzipSync(JSON.stringify(value)).toString('base64')
 const cartRaw = () => ({ list: [{ id: '201', bundles: [{ orders: [{ cartId: '901', itemId: '301', skuId: '0', title: '示例水 570ml×24',
   amount: { now: 1 }, checked: true, isValid: true, price: { now: 5090, sum: 5090 } }] }],
   extendData: { extraInfo: { urlFlags: { dyBuyParams: 'synthetic', buyBuildParams: '{}' } } } }] })
-const owner = cart => ({ cart, storeId: '201', buyerId: '501', addressId: '601', merchant: '示例便利店' })
+const owner = cart => ({ cart, storeId: '201', buyerId: '501', addressId: '601', uicAddressId: '701', merchant: '示例便利店' })
 function quoteRaw() {
   const node = fields => ({ fields, props: { isSubmit: 'true' } })
   return { data: { retail_lmagex_checkout_submitOrder: node({ discountedTotalPrice: 48.2, isAddrSelected: true }),
@@ -20,7 +20,7 @@ function quoteRaw() {
     retail_lmagex_checkout_eleme_red_package_list: node({ alscNewretailCouponInfoList: [{ isSelected: true, amount: 11, explosionFirstDiscount: 8 }] }) },
     ext: { linkage: { submit: zip({ buyerId: '501', cashierPaymentDTO: { payOrderAmount: 4820, payCurrency: 'CNY', orderCurrency: 'CNY' },
       orderDTOs: [{ orderLineDTOs: [{ itemId: { itemId: '301', skuId: '0' }, buyQuantity: 1 }] }] }),
-      adjust: zip({ tradeBuyQuery: { userId: '501' }, extraParams: { storeId: '201', checkoutAddressInfo: '{"selectedEleAddressId":"601"}' },
+      adjust: zip({ tradeBuyQuery: { userId: '501' }, extraParams: { storeId: '201', checkoutAddressInfo: '{"selectedEleAddressId":"601","selectedUicAddressId":"701"}' },
         itemParams: [{ itemId: '301', skuId: '0', quantity: 1, valid: true }] }) } } }
 }
 
@@ -40,6 +40,49 @@ test('native quote preserves the server coupon and final total without adding an
   assert.equal(quote.display.totalCents, 4820); assert.equal(quote.display.couponCents, 1100)
   assert.equal(quote.display.items[0].priceCents, 5090)
   assert(JSON.parse(gunzipSync(Buffer.from(quote.request.params, 'base64'))).retail_lmagex_checkout_submitOrder)
+})
+
+test('merchant delivery uses the selected address server link and rejects missing or duplicate links', () => {
+  const row = { id_string: '601', address_id_string: '701' }
+  assert.equal(retailAddressLink({ addressList: [row] }, '601'), '701')
+  for (const rows of [[], [row, row], [{ ...row, id_string: '602' }], [{ ...row, address_id_string: '0' }]]) {
+    assert.throws(() => retailAddressLink({ addressList: rows }, '601'))
+  }
+  assert.throws(() => retailCheckoutData(quoteRaw(), { ...owner(retailCartData(cartRaw(), '201')), uicAddressId: '702' }))
+})
+
+test('fixed-price discounts retain the cashier total when the coupon component has no fields', () => {
+  const raw = quoteRaw()
+  raw.data.retail_lmagex_checkout_eleme_red_package_list = {}
+  raw.data.retail_lmagex_checkout_submitOrder.fields.discountedTotalPrice = 47.1
+  const linkage = JSON.parse(gunzipSync(Buffer.from(raw.ext.linkage.submit, 'base64')))
+  linkage.cashierPaymentDTO.payOrderAmount = 4710
+  raw.ext.linkage.submit = zip(linkage)
+  const quote = retailCheckoutData(raw, owner(retailCartData(cartRaw(), '201')))
+  assert.equal(quote.display.totalCents, 4710)
+  assert.equal(quote.display.couponCents, 0)
+})
+
+test('checkout sends both linked address IDs and stops before build when the selected address is missing', async () => {
+  const calls = [], address = { ref: 'address-ref', nativeId: '601', coordinates: { latitude: 31, longitude: 121 } }
+  let rows = [{ id_string: '601', address_id_string: '701' }]
+  const login = { protocol: { checkout: { api: 'build' }, retail: { cart: { api: 'cart' }, addressQuery: { api: 'addresses' }, client: {}, checkoutClient: {} } },
+    run: fn => fn(), mtop: async (spec, args) => {
+      calls.push({ api: spec.api, args })
+      return { data: spec.api === 'cart' ? cartRaw() : spec.api === 'addresses' ? { addressList: rows } : quoteRaw() }
+    } }
+  const trade = { login, service: { checkReply: () => {} }, buyer: async () => ({ buyerId: '501' }), verify: async () => {},
+    displayCart: (_context, cart) => cart.display, now: () => 1000, quoteSeconds: 60, capCents: 5000, dryRun: false }
+  const retail = new RetailTrade(trade)
+  retail.context = async () => ({ nativeShopId: '201', shopId: 'E201', address, merchant: '示例便利店' })
+  const args = { shopId: 'E201', revision: retailCartData(cartRaw(), '201').revision }
+  assert.equal((await retail.checkout(args)).totalCents, 4820)
+  const extra = JSON.parse(calls.find(call => call.api === 'build').args.exParams)
+  assert.deepEqual(JSON.parse(extra.checkoutAddressInfo), { selectedEleAddressId: '601', selectedUicAddressId: '701', addressSelectBy: 'user', addressType: '5' })
+  rows = []; calls.length = 0
+  await assert.rejects(retail.checkout(args), error => error.code === 'retail-address-unmapped')
+  assert(!calls.some(call => call.api === 'build'))
+  assert.equal(trade.quote, null)
 })
 
 test('foreign account, address, SKU and inconsistent cashier total reject native quotes', () => {
