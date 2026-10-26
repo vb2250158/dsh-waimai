@@ -12,6 +12,9 @@ test('login diagnostics retain protocol outcomes while rejecting all remote free
   } }
   const result = loginResponseDiagnostic(raw)
   assert.deepEqual(result.ret, ['FAIL_SYS_SESSION_EXPIRED', 'unrecognized'])
+  assert.deepEqual(loginResponseDiagnostic({ ret: ['FAIL_BIZ_DELIVERY_TIME_REQUIRED::' + secret,
+    'FAIL_BIZ_' + secret, 'FAIL_BIZ_PRIVATE_123456789'] }).ret,
+  ['FAIL_BIZ_DELIVERY_TIME_REQUIRED', 'unrecognized', 'unrecognized'])
   assert.equal(result.action, 'unrecognized'); assert.equal(result.code, null)
   assert.equal(result.codeType, 'string'); assert.equal(result.site, 25)
   assert.equal(result.cookieCount, 1); assert.equal(result.hasChallenge, true)

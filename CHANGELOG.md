@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.7
+
+- Require a selected delivery time for reservation-only supermarket checkout; explicit earliest delivery selection reprices through the platform.
+- Send the native checkout components and delivery writeback used by the official client.
+- Preserve bounded platform failure codes without response text or credentials.
+- Permit one explicitly authorized retry after official reconciliation, retaining the original unknown attempt and budget reservation.
+
 ## 0.8.6
 
 - Resolve the selected delivery address through the platform's Eleme-to-Taobao address link for merchant delivery.

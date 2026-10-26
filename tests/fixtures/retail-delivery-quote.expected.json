@@ -1,0 +1,8 @@
+{
+  "merchant": "示例便利店",
+  "items": [{ "name": "示例水 570ml×24", "quantity": 1, "priceCents": 5090 }],
+  "totalCents": 4820,
+  "couponCents": 1100,
+  "fees": [],
+  "deliveryTime": "明日08:00–12:00送达"
+}

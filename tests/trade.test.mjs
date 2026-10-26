@@ -106,6 +106,28 @@ const getQuote = async f => {
 }
 const submitArgs = quote => ({ quoteRef: quote.quoteRef, confirmed: true, confirmedCents: quote.totalCents })
 
+test('a reconciled unknown order permits one explicit same-cart retry while retaining both attempts', async () => {
+  const f = await fixture()
+  try {
+    f.rejectSubmit()
+    const first = await getQuote(f)
+    await assert.rejects(f.trade.submit(submitArgs(first)), error => error.code === 'order-unknown')
+    const second = await getQuote(f)
+    const retry = { ...submitArgs(second), retryOf: first.quoteRef, previousOrderAbsent: true, manualConfirmation: true }
+    await assert.rejects(f.trade.submit({ ...retry, previousOrderAbsent: undefined }), error => error.code === 'retry-invalid')
+    await assert.rejects(f.trade.submit({ ...retry, manualConfirmation: false }), error => error.code === 'retry-invalid')
+    await assert.rejects(f.trade.submit({ ...retry, retryOf: '11111111-1111-4111-8111-111111111111' }), error => error.code === 'retry-invalid')
+    await assert.rejects(f.trade.submit(retry), error => error.code === 'order-unknown')
+    const third = await getQuote(f)
+    for (const retryOf of [first.quoteRef, second.quoteRef]) {
+      await assert.rejects(f.trade.submit({ ...submitArgs(third), retryOf, previousOrderAbsent: true, manualConfirmation: true }), error => error.code === 'retry-invalid')
+    }
+    const records = (await f.trade.journal()).attempts
+    assert.equal(records.length, 2); assert.equal(records[1].retryOf, records[0].ref)
+    assert.equal(f.calls.filter(call => call.api === 'submit').length, 2)
+  } finally { await f.close() }
+})
+
 test('checkout and submission diagnostics share a quote reference without retaining private response values', async () => {
   const f = await fixture(), events = [], secret = 'synthetic-private-response'
   f.service.login.diagnostic = value => events.push(value)

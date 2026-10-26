@@ -260,6 +260,18 @@
       "appVersion": "10.53.21",
       "bizFEVersion": "3.3.5",
       "lastBusinessType": 0
+    },
+    "adjust": {
+      "url": "https://alsc-buy2.ele.me/h5/mtop.alsc.bpgw.trade.order.adjust/1.0/",
+      "api": "mtop.alsc.bpgw.trade.order.adjust",
+      "method": "POST",
+      "version": "1.0",
+      "appKey": "12574478",
+      "jsv": "2.7.2",
+      "headers": {
+        "asac": "alscGpdG4bag44EYyJBRPX",
+        "x-ele-ua": "RenderWay/h5 AppName/tb channel/miniapp subChannel/miniapp.taobao subSubChannel/miniapp.taobao.et"
+      }
     }
   }
 }

@@ -4,6 +4,7 @@ import { gzipSync, gunzipSync } from 'node:zlib'
 import { retailAddressLink, retailCartData, retailCheckoutData, RetailTrade } from '../lib/retail-trade.js'
 import { registerAgentOrdering } from '../lib/agent-ordering.js'
 import { z } from 'zod'
+import { readFile } from 'node:fs/promises'
 import { retailPaymentDestination } from '../lib/trade-data.js'
 
 const zip = value => gzipSync(JSON.stringify(value)).toString('base64')
@@ -40,6 +41,42 @@ test('native quote preserves the server coupon and final total without adding an
   assert.equal(quote.display.totalCents, 4820); assert.equal(quote.display.couponCents, 1100)
   assert.equal(quote.display.items[0].priceCents, 5090)
   assert(JSON.parse(gunzipSync(Buffer.from(quote.request.params, 'base64'))).retail_lmagex_checkout_submitOrder)
+})
+
+test('reservation quotes require a selected time and submit the official delivery writeback without UI fields', async () => {
+  const raw = quoteRaw(), cart = retailCartData(cartRaw(), '201')
+  raw.data.retail_lmagex_timeselect = { props: {}, fields: { deliveryReachTime: '选择送达时间', deliveryReachTimeInMills: '',
+    storeId: '201', writeback: { isBookOrder: 1, isDeliverNow: 0, storeId: '201' },
+    alscNrTimeTab: { bookTimeList: [{ productId: '897008', bookTimeList: [{ bookTimePointList: [
+      { isAllowOrder: false, isBookOrder: true, timeInMills: '1793044800000' },
+      { isAllowOrder: true, isBookOrder: true, timeInMills: '1793073600000' },
+      { isAllowOrder: true, isBookOrder: true, timeInMills: '1793059200000' },
+    ] }] }] } } }
+  assert.throws(() => retailCheckoutData(raw, owner(cart)), error => error.code === 'retail-delivery-required')
+  let calls = 0, mismatch = false
+  const retail = new RetailTrade({ service: { checkReply: () => {} }, login: { protocol: { retail: { adjust: { api: 'adjust' } } },
+    mtop: async (spec, request) => {
+      calls++; assert.equal(spec.api, 'adjust'); assert.equal(request.linkage, raw.ext.linkage.adjust)
+      const sent = JSON.parse(gunzipSync(Buffer.from(request.params, 'base64'))).retail_lmagex_timeselect
+      assert.equal(sent.writeback.selectedDaytime, '1793059200000'); assert.equal(sent.writeback.productId, '897008')
+      const updated = structuredClone(raw)
+      updated.data.retail_lmagex_timeselect.fields.deliveryReachTimeInMills = mismatch ? '1793073600000' : '1793059200000'
+      updated.data.retail_lmagex_timeselect.fields.deliveryReachTime = '明日08:00–12:00送达'
+      updated.data.retail_lmagex_checkout_DeliveryInfo.props = {}
+      return { data: updated }
+    } } })
+  const updated = await retail.earliestDelivery(raw), quote = retailCheckoutData(updated, owner(cart))
+  assert.deepEqual(quote.display, JSON.parse(await readFile(new URL('./fixtures/retail-delivery-quote.expected.json', import.meta.url), 'utf8')))
+  assert.equal(quote.display.deliveryTime, '明日08:00–12:00送达')
+  const sent = JSON.parse(gunzipSync(Buffer.from(quote.request.params, 'base64')))
+  assert.deepEqual(sent.retail_lmagex_timeselect, { writeback: raw.data.retail_lmagex_timeselect.fields.writeback })
+  assert(sent.retail_lmagex_checkout_DeliveryInfo)
+  await retail.earliestDelivery(updated); assert.equal(calls, 1)
+  mismatch = true
+  await assert.rejects(retail.earliestDelivery(raw), error => error.code === 'retail-delivery-changed')
+  raw.data.retail_lmagex_timeselect.fields.alscNrTimeTab.bookTimeList[0].bookTimeList[0].bookTimePointList.forEach(slot => { slot.isAllowOrder = false })
+  await assert.rejects(retail.earliestDelivery(raw), error => error.code === 'retail-delivery-unavailable')
+  assert.equal(calls, 2)
 })
 
 test('merchant delivery uses the selected address server link and rejects missing or duplicate links', () => {
