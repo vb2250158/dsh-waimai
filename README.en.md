@@ -1,5 +1,9 @@
 # dsh-waimai
 
+Restaurant POST_STANDARD creation responses unwrap the official payment envelope. Only eleme://cashier is normalized to the official HTTPS cashier. Unrecognized handoffs retain the created order IDs without implying payment success.
+
+For Taobao orders, conversation-card refreshes and agent checkout retain their own unexpired quote references. A refresh does not replace another valid quote. Submission still checks account, address, cart, exact amount and expiry; a consumed quote cannot be submitted twice.
+
 Each retry after an unknown Taobao creation result requires renewed explicit user authorization and official order reconciliation. retryOf must identify the latest unknown attempt for the same cart with no successor, and the amount cannot increase. Authorization never carries forward automatically; history and reservations remain intact.
 
 Checkout, submission and adjustment send asac in URL query parameters as the official MTOP SDK does. The cashier unwraps official THIRD_PAY handoffs and reconciles terminal results through the payment query API. Query parameters remain in process memory; restarts preserve the payment ledger without retrying charges. These protocol fixes do not establish live order or payment acceptance.

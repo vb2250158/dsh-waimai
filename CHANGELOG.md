@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.13
+
+- Decode official restaurant payment envelopes and normalize the supported native cashier destination.
+
+- Preserve concurrent checkout quotes so card refreshes cannot invalidate the agent quote before submission.
+- Retain expiry, current-cart validation and one-use submission guarantees for each quote.
+
 ## 0.8.12
 
 - Clarify that renewed retry authorization applies to restaurant orders; supermarket retry behavior remains unchanged.

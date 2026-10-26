@@ -6,6 +6,7 @@ import { registerAgentOrdering } from '../lib/agent-ordering.js'
 import { z } from 'zod'
 import { readFile } from 'node:fs/promises'
 import { retailPaymentDestination } from '../lib/trade-data.js'
+import { TaobaoTrade } from '../lib/taobao-trade.js'
 
 const zip = value => gzipSync(JSON.stringify(value)).toString('base64')
 const cartRaw = () => ({ list: [{ id: '201', bundles: [{ orders: [{ cartId: '901', itemId: '301', skuId: '0', title: '示例水 570ml×24',
@@ -109,17 +110,21 @@ test('checkout sends both linked address IDs and stops before build when the sel
       return { data: spec.api === 'cart' ? cartRaw() : spec.api === 'addresses' ? { addressList: rows } : quoteRaw() }
     } }
   const trade = { login, service: { checkReply: () => {} }, buyer: async () => ({ buyerId: '501' }), verify: async () => {},
+    quotes: new Map(), pruneQuotes: TaobaoTrade.prototype.pruneQuotes, retainQuote: TaobaoTrade.prototype.retainQuote,
     displayCart: (_context, cart) => cart.display, now: () => 1000, quoteSeconds: 60, capCents: 5000, dryRun: false }
   const retail = new RetailTrade(trade)
   retail.context = async () => ({ nativeShopId: '201', shopId: 'E201', address, merchant: '示例便利店' })
   const args = { shopId: 'E201', revision: retailCartData(cartRaw(), '201').revision }
-  assert.equal((await retail.checkout(args)).totalCents, 4820)
+  const first = await retail.checkout(args), refreshed = await retail.checkout(args)
+  assert.equal(first.totalCents, 4820); assert.equal(refreshed.totalCents, 4820)
+  assert.notEqual(first.quoteRef, refreshed.quoteRef)
+  assert.equal(trade.quotes.size, 2)
   const extra = JSON.parse(calls.find(call => call.api === 'build').args.exParams)
   assert.deepEqual(JSON.parse(extra.checkoutAddressInfo), { selectedEleAddressId: '601', selectedUicAddressId: '701', addressSelectBy: 'user', addressType: '5' })
   rows = []; calls.length = 0
   await assert.rejects(retail.checkout(args), error => error.code === 'retail-address-unmapped')
   assert(!calls.some(call => call.api === 'build'))
-  assert.equal(trade.quote, null)
+  assert(trade.quotes.has(first.quoteRef)); assert(trade.quotes.has(refreshed.quoteRef))
 })
 
 test('foreign account, address, SKU and inconsistent cashier total reject native quotes', () => {
@@ -195,13 +200,15 @@ test('native add rereads inventory, preserves the action identity and never retr
       return { data: {} }
     } }
   const base = { login, service: { selectedAddress: async () => address, checkReply: () => {} }, verify: async () => {}, mutations: new Set(),
-    displayCart: (context, cart) => cart.display }
+    quotes: new Map([['owned', { context: { accountId: 'account', shopId: 'E201' } }], ['other', { context: { accountId: 'account', shopId: 'E202' } }]]),
+    invalidateQuotes: TaobaoTrade.prototype.invalidateQuotes, displayCart: (context, cart) => cart.display }
   const retail = new RetailTrade(base), found = await retail.search({ shopId: 'E201', keyword: '水' })
   const args = { productRef: found.items[0].productRef, operationRef: 'operation-1', quantity: 1, revision: retailCartData(raw, '201').revision }
   product.stockModel.quantity = 0
   await assert.rejects(retail.add(args), error => error.code === 'retail-spec-required'); assert.equal(writes, 0)
   product.stockModel.quantity = 3; unknown = true
   await assert.rejects(retail.add(args), /transport interrupted/); assert.equal(writes, 1)
+  assert(!base.quotes.has('owned')); assert(base.quotes.has('other'))
   await assert.rejects(retail.add({ ...args, revision: retailCartData(raw, '201').revision }), error => error.code === 'cart-duplicate')
   assert.equal(writes, 1); assert.equal((await retail.cart({ shopId: 'E201' })).quantity, 1)
 })

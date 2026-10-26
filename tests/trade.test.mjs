@@ -97,7 +97,7 @@ async function fixture(options = {}) {
   const service = { login, async selectedAddress(ref) { if (ref !== undefined && ref !== selected.ref) throw Error('stale address'); return selected },
     checkReply(raw) { assert(raw.ret.some(value => value.startsWith('SUCCESS::'))) } }
   const trade = new TaobaoTrade(service, { journalDirectory: directory, dryRun: false, now: () => now, ...options })
-  return { trade, calls, raw, directory, service, changeAccount: () => { accountId = '999' }, advance: () => { now += 121000 },
+  return { trade, calls, raw, directory, service, changeAccount: () => { accountId = '999' }, advance: (milliseconds = 121000) => { now += milliseconds },
     rejectSubmit: () => { rejectSubmit = true }, setCheckoutTotal: value => { checkoutTotal = value }, close: () => rm(directory, { recursive: true, force: true }) }
 }
 const getQuote = async f => {
@@ -248,6 +248,46 @@ test('preview, expiry, cap, confirmation and changed cart reject before any orde
       if (scenario === 'confirmation') args.confirmedCents++
       if (scenario === 'cart') f.raw.couple_group[0].cart_item_d_t_o_list[0].quantity++
       await assert.rejects(f.trade.submit(args)); assert(!f.calls.some(value => value.api === 'submit'))
+    } finally { await f.close() }
+  }
+})
+
+test('refreshing checkout retains an earlier unexpired quote and never permits a second order for its cart', async () => {
+  const f = await fixture()
+  try {
+    const first = await getQuote(f), refreshed = await getQuote(f)
+    assert.notEqual(first.quoteRef, refreshed.quoteRef)
+    const order = await f.trade.submit(submitArgs(first))
+    assert.deepEqual(order.orderIds, ['123456'])
+    await assert.rejects(f.trade.submit(submitArgs(first)), error => error.code === 'quote-expired')
+    await assert.rejects(f.trade.submit(submitArgs(refreshed)), error => error.code === 'order-duplicate')
+    assert.equal(f.calls.filter(call => call.api === 'submit').length, 1)
+  } finally { await f.close() }
+})
+
+test('each retained quote expires on its own deadline while a later refresh remains usable', async () => {
+  const f = await fixture()
+  try {
+    const first = await getQuote(f)
+    f.advance(60000)
+    const refreshed = await getQuote(f)
+    f.advance(61000)
+    await assert.rejects(f.trade.submit(submitArgs(first)), error => error.code === 'quote-expired')
+    assert.equal((await f.trade.submit(submitArgs(refreshed))).amountCents, 2100)
+    assert.equal(f.calls.filter(call => call.api === 'submit').length, 1)
+  } finally { await f.close() }
+})
+
+test('retained quotes still reject changed carts or accounts before any submission', async () => {
+  for (const scenario of ['cart', 'account']) {
+    const f = await fixture()
+    try {
+      const first = await getQuote(f), refreshed = await getQuote(f)
+      if (scenario === 'cart') f.raw.couple_group[0].cart_item_d_t_o_list[0].update_at = 200000
+      else f.changeAccount()
+      await assert.rejects(f.trade.submit(submitArgs(first)), error => error.code === (scenario === 'cart' ? 'cart-changed' : 'account-changed'))
+      await assert.rejects(f.trade.submit(submitArgs(refreshed)))
+      assert.equal(f.calls.filter(call => call.api === 'submit').length, 0)
     } finally { await f.close() }
   }
 })
