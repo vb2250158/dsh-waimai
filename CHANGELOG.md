@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.10
+
+- Include fixed failure-message hints in diagnostics without retaining remote text or changing retry rules.
+
 ## 0.8.9
 
 - Keep unknown creation attempts queryable without requiring a cashier order ID.

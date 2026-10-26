@@ -48,3 +48,12 @@ test('the Host exporter captures projected cart outcomes without enabling other 
   exporter.export({ ts: 0, args: ['waimai-mcp: [unrelated] synthetic-secret'] })
   assert.equal(lines.length, 1); assert(lines[0].includes('quantity-confirmed')); assert(!lines[0].includes('synthetic-secret'))
 })
+
+test('failure hints expose fixed message categories without remote text or retry decisions', () => {
+  const result = loginResponseDiagnostic({ ret: ['B_10006_01_18_026::请选择餐具，优惠券已过期 synthetic-private-token https://private.example/secret 13812345678'] })
+  assert.deepEqual(result.failureHints, ['tableware', 'selection', 'coupon', 'expired'])
+  assert(!JSON.stringify(result).includes('secret')); assert(!JSON.stringify(result).includes('13812345678'))
+  assert(!JSON.stringify(result).includes('请选择')); assert(!Object.hasOwn(result, 'retryable'))
+  assert.deepEqual(loginResponseDiagnostic({ ret: ['SUCCESS::请选择餐具', 'address secret without separator'] }).failureHints, [])
+  assert.deepEqual(loginResponseDiagnostic({ ret: ['FAIL_BIZ_TEST::' + 'x'.repeat(4097) + '餐具'] }).failureHints, [])
+})

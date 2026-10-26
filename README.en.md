@@ -1,5 +1,7 @@
 # dsh-waimai
 
+Failure diagnostics also include fixed message-term categories such as address, tableware or coupon, without retaining remote text. Hints do not establish a failure cause or authorize a retry.
+
 get_order_status can inspect an unknown creation attempt without invoking cashier methods that require an order ID. Only a created attempt with one order ID proceeds to payment reconciliation. An empty official match does not confirm absence. Submission diagnostics retain bounded numeric business codes and discard accompanying messages.
 
 Taobao checkout and submission send the same Taobao channel header so coupons are priced for the intended channel. A read-only check on 2026-10-26 changed a 570 ml × 24 water quote from ¥49.20 with a ¥10 coupon to ¥48.20 with the already upgraded ¥11 coupon, matching the official app; it created no order or payment. The official upgrade endpoint is `mtop.alibaba.svip.langrisser.act`, using the coupon button's server-issued `extInfo.supplyInst`. Already upgraded coupons need no upgrade request. Missing parameters are never guessed or replaced with membership exchanges. This release corrects quote routing; it does not activate new coupon upgrades.
