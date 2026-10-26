@@ -1,5 +1,7 @@
 # dsh-waimai
 
+Taobao checkout and submission send the same Taobao channel header so coupons are priced for the intended channel. A read-only check on 2026-10-26 changed a 570 ml × 24 water quote from ¥49.20 with a ¥10 coupon to ¥48.20 with the already upgraded ¥11 coupon, matching the official app; it created no order or payment. The official upgrade endpoint is `mtop.alibaba.svip.langrisser.act`, using the coupon button's server-issued `extInfo.supplyInst`. Already upgraded coupons need no upgrade request. Missing parameters are never guessed or replaced with membership exchanges. This release corrects quote routing; it does not activate new coupon upgrades.
+
 Taobao checkout and submission diagnostics share a quote reference and distinguish transport failures, platform responses and quote validation results. Logs retain structured protocol status and amounts without remote messages, order payloads, addresses or payment links. Live purchasing still requires verification with the current account.
 
 Hema delivery store IDs are normalized before address checks, so reordered IDs do not invalidate checkout; changed store membership still stops submission. Order diagnostics retain structured return codes without remote messages, credentials or payment links. Unknown outcomes retain the original attempt and block duplicate submission.

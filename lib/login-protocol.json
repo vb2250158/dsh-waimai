@@ -173,7 +173,8 @@
     "appKey": "12574478",
     "jsv": "2.7.2",
     "headers": {
-      "asac": "alscGpdG4bag44EYyJBRPX"
+      "asac": "alscGpdG4bag44EYyJBRPX",
+      "x-ele-ua": "RenderWay/h5 AppName/tb channel/miniapp subChannel/miniapp.taobao subSubChannel/miniapp.taobao.et"
     }
   },
   "submit": {
@@ -184,7 +185,8 @@
     "appKey": "12574478",
     "jsv": "2.7.2",
     "headers": {
-      "asac": "alscGpdG4bag44EYyJBRPX"
+      "asac": "alscGpdG4bag44EYyJBRPX",
+      "x-ele-ua": "RenderWay/h5 AppName/tb channel/miniapp subChannel/miniapp.taobao subSubChannel/miniapp.taobao.et"
     }
   }
 }
