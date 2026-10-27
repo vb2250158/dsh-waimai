@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { TaobaoCashier, cashierQuote, cashierParameters, cashierResult, providerPaymentUrl, retailPaymentStatus, paymentHandoffUrl, cashierPaymentStatus, paymentResponseDiagnostic } from '../lib/cashier.js'
+import { TaobaoCashier, cashierQuote, cashierParameters, cashierResult, providerPaymentUrl, providerPaymentDestination, retailPaymentStatus, paymentHandoffUrl, cashierPaymentStatus, paymentResponseDiagnostic } from '../lib/cashier.js'
 
 const orderRef = '11111111-1111-4111-8111-111111111111'
 const envelope = value => ({ succeeded: true, result: JSON.stringify([value]) })
@@ -173,7 +173,7 @@ test('malformed verification links remain unknown instead of presenting an unusa
     assert.equal((await f.cashier.history([f.order])).get(orderRef).paymentHandoffAvailable, false)
     assert.deepEqual(f.logs.find(value => value.stage === 'payment-response'), { group: 'waimai-order', attemptId: (await f.cashier.ledger()).attempts[0].ref,
       stage: 'payment-response', payResult: 'UNKNOWN', payAction: 'H5_URL', handoffAccepted: false,
-      handoffRejected: true, handoffReason: 'unapproved-destination' })
+      handoffRejected: true, handoffReason: 'unapproved-destination', destinationReason: 'unrecognized-host' })
   } finally { await f.dispose() }
 })
 
@@ -248,7 +248,7 @@ test('payment diagnostics contain only fixed action and handoff classifications'
     [{ payResult: 'UNKNOWN', payAction: 'H5_URL', targetUrl: 'https://mclient.alipay.com/?secret=private' }, 'browser-url'],
     [{ payResult: 'UNKNOWN', payAction: 'THIRD_PAY', targetUrl: '{private' }, 'invalid-third-party-payload'],
     [{ payResult: 'UNKNOWN', payAction: 'THIRD_PAY', targetUrl: JSON.stringify({ targetUrl: 'https://attacker.test/?secret=private' }) }, 'unapproved-destination'],
-    [{ payResult: 'UNKNOWN', payAction: 'ALIPAY_SDK', targetUrl: 'private-sdk-secret' }, 'native-sdk'],
+    [{ payResult: 'UNKNOWN', payAction: 'ALIPAY_SDK', targetUrl: 'private-sdk-secret' }, 'native-sdk-unavailable'],
     [{ payResult: 'UNKNOWN', payAction: 'H5_URL' }, 'missing-target'],
     [{ payResult: 'UNKNOWN', payAction: 'private-action-secret', targetUrl: 'private-target' }, 'unsupported-action'],
     [{ payResult: 'private-result-secret' }, 'unrecognized-result'],
@@ -258,6 +258,52 @@ test('payment diagnostics contain only fixed action and handoff classifications'
     assert.equal(diagnostic.handoffReason, reason)
     for (const privateValue of ['private', 'secret', 'https:', 'attacker']) assert(!JSON.stringify(diagnostic).includes(privateValue))
   }
+})
+
+test('official WAP gateways preserve signed parameters and reject unrelated paths and destinations', async () => {
+  for (const host of ['mapi.alipay.com', 'openapi.alipay.com']) {
+    const f = await fixture()
+    try {
+      const targetUrl = `https://${host}/gateway.do?sign=synthetic%2Bsignature&return_url=https%3A%2F%2Fexample.test%2Fdone`
+      f.control.submit = { payResult: 'UNKNOWN', extraMap: { payAction: 'H5_URL' }, targetUrl }
+      assert.equal(providerPaymentUrl(targetUrl), targetUrl)
+      assert.equal((await f.pay(await f.cashier.prepare({ orderRef }))).paymentStatus, 'requires-verification')
+      assert.equal((await f.cashier.history([f.order])).get(orderRef).paymentUrl, targetUrl)
+      assert.equal(f.calls.filter(call => call.api === 'submit').length, 1)
+      assert.equal(f.logs.find(value => value.stage === 'payment-response').destinationReason, 'alipay-gateway')
+      for (const value of [await f.cashier.ledger(), f.logs]) assert(!JSON.stringify(value).includes('synthetic%2Bsignature'))
+    } finally { await f.dispose() }
+  }
+  for (const [target, reason] of [
+    ['http://mapi.alipay.com/gateway.do', 'unsupported-scheme'],
+    ['https://openapi.alipay.com/redirect', 'unsupported-gateway-path'],
+    ['https://mapi.alipay.com/gateway.do/anything', 'unsupported-gateway-path'],
+    ['https://openapi.alipay.com:444/gateway.do', 'unsupported-port'],
+    ['https://u:p@mapi.alipay.com/gateway.do', 'embedded-credentials'],
+    ['https://mapi.alipay.com.attacker.test/gateway.do?secret=private', 'unrecognized-host'],
+    ['not-a-url-private', 'invalid-url'],
+  ]) {
+    assert.deepEqual(providerPaymentDestination(target), { reason, url: null })
+    const diagnostic = paymentResponseDiagnostic({ payResult: 'UNKNOWN', payAction: 'H5_URL', targetUrl: target })
+    assert.equal(diagnostic.destinationReason, reason)
+    assert.equal(diagnostic.handoffAccepted, false)
+    for (const secret of ['private', 'attacker', 'https:', 'u:p']) assert(!JSON.stringify(diagnostic).includes(secret))
+  }
+})
+
+test('native SDK requests stay unknown until a supported bridge can deliver the original verification', async () => {
+  const f = await fixture()
+  try {
+    f.control.submit = { payResult: 'UNKNOWN', extraMap: { payAction: 'ALIPAY_SDK', cashierOrderNo: 'V2_synthetic' }, targetUrl: 'private-sdk-secret' }
+    const result = await f.pay(await f.cashier.prepare({ orderRef }))
+    assert.equal(result.paymentStatus, 'unknown')
+    assert.equal(paymentResponseDiagnostic(f.control.submit).handoffAccepted, false)
+    assert.equal((await f.cashier.history([f.order])).get(orderRef).paymentHandoffAvailable, false)
+    assert.equal((await f.cashier.status({ orderRef })).paymentQueryAvailable, true)
+    await assert.rejects(f.cashier.prepare({ orderRef }), error => error.code === 'payment-already-attempted')
+    assert.equal(f.calls.filter(call => call.api === 'submit').length, 1)
+    assert(!JSON.stringify(await f.cashier.ledger()).includes('private-sdk-secret'))
+  } finally { await f.dispose() }
 })
 
 test('a restarted verification attempt suppresses generic cashier links when its private handoff is gone', async () => {

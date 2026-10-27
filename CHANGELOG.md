@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.17
+
+- Accept official Alipay WAP gateway handoffs at the exact HTTPS `mapi.alipay.com/gateway.do` and `openapi.alipay.com/gateway.do` endpoints without changing signed query parameters.
+- Classify rejected payment destinations without logging addresses or provider data; unavailable native SDK bridges retain an unknown result instead of presenting an unusable verification step.
+
 ## 0.8.16
 
 - Remove generic continue-payment instructions after a payment attempt and show a distinct notice when its original verification link is unavailable.

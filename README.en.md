@@ -1,5 +1,7 @@
 # dsh-waimai
 
+Alipay browser handoffs accept the existing cashier hosts and the exact HTTPS `mapi.alipay.com/gateway.do` and `openapi.alipay.com/gateway.do` endpoints documented in the [official WAP migration guide](https://developer.alibaba.com/docs/doc.htm?articleId=107095&docType=1&treeId=203). Signed query parameters are preserved. Diagnostics contain fixed destination rejection categories without addresses or query parameters. Without a native payment bridge, `ALIPAY_SDK` remains unknown instead of advertising an unavailable verification step. Opening verification does not establish payment success; the official result must still be queried.
+
 Payment diagnostics record only fixed result, action and handoff classifications, never payment URLs, SDK payloads or extraMap contents. Unknown, paid and failed attempts hide generic payment links. Verification can resume only through the original handoff retained in memory; losing that handoff does not expose an automatic-payment order page or authorize another payment request. These changes do not resolve an existing unknown payment outcome.
 
 After a payment attempt, the cart, checkout and payment cards no longer instruct users to continue payment in the official app. Unknown outcomes instruct users to check status. Missing original verification links explicitly instruct users to check the payment outcome and not pay again.
