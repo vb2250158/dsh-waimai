@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, readFile } from 'node:fs/promises'
+import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gzipSync, gunzipSync } from 'node:zlib'
@@ -105,6 +105,40 @@ const getQuote = async f => {
   return f.trade.checkout({ shopId: 'store-17', addressRef: address.ref, revision: cart.revision })
 }
 const submitArgs = quote => ({ quoteRef: quote.quoteRef, confirmed: true, confirmedCents: quote.totalCents })
+
+test('submitted orders retain the confirmed product summary instead of caller-supplied content, while old records remain readable', async () => {
+  const f = await fixture()
+  try {
+    const quote = await getQuote(f)
+    await f.trade.submit({ ...submitArgs(quote), itemSummary: 'caller-supplied different goods' })
+    const journal = await f.trade.journal()
+    assert.equal(journal.attempts[0].itemSummary, '示例饭×1；无需餐具×1')
+    assert.equal(journal.attempts[0].status, 'created')
+    delete journal.attempts[0].itemSummary
+    await writeFile(join(f.directory, 'trade-attempts.json'), JSON.stringify(journal))
+    assert.equal((await f.trade.journal()).attempts[0].itemSummary, undefined)
+  } finally { await f.close() }
+})
+
+test('an empty confirmed product list cannot create an order and retained summaries are bounded', async () => {
+  for (const empty of [true, false]) {
+    const f = await fixture()
+    try {
+      const quote = await getQuote(f), stored = f.trade.quotes.get(quote.quoteRef)
+      stored.display.items = empty ? [] : Array.from({ length: 10 }, () => ({ name: '商品'.repeat(200), quantity: 1 }))
+      if (empty) {
+        await assert.rejects(f.trade.submit(submitArgs(quote)), error => error.code === 'order-items-missing')
+        assert.equal((await f.trade.journal()).attempts.length, 0)
+        assert(!f.calls.some(call => call.api === 'submit'))
+      } else {
+        await f.trade.submit(submitArgs(quote))
+        const summary = (await f.trade.journal()).attempts[0].itemSummary
+        assert.equal(summary.length, 2000)
+        assert(summary.startsWith('商品'))
+      }
+    } finally { await f.close() }
+  }
+})
 
 test('an item that cannot be ordered alone reports the platform restriction before creation', async () => {
   const f = await fixture(), original = f.service.login.mtop.bind(f.service.login)

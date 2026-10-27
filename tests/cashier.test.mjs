@@ -14,7 +14,7 @@ const quote = () => ({ cashierOrderNo: 'V2_synthetic', payAmount: 300, payCurren
 
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), 'waimai-cashier-')), calls = [], logs = []
-  const order = { ref: orderRef, accountId: 'owner', status: 'created', orderIds: ['123'], amountCents: 300, merchant: '示例店',
+  const order = { ref: orderRef, accountId: 'owner', status: 'created', orderIds: ['123'], amountCents: 300, merchant: '示例店', itemSummary: '示例商品 ×1',
     paymentUrl: 'https://r.ele.me/payment?checkoutOrderNos=private-order&returnUrl=https%3A%2F%2Fh5.ele.me%2F&payEntrance=TAOBAO_APPLET' }
   const control = { now: 1000, accountId: 'owner', status: '待支付', amount: '3.00', quote: quote(), transportFailure: false,
     query: { value: { batchStatus: 'U' } }, queryFailure: false,
@@ -60,7 +60,7 @@ test('official Agent Pay uses Host identity and keeps verification material out 
   const sessionId = 'session-008283f7-fee1-4219-be64-06cf151e20b3'
   const queryRef = '20260617008282174448790088372682'
   const shortUrl = 'https://u.alipay.com/synthetic-private-verification'
-  f.control.submit.targetUrl = 'https://excashier.alipay.com/?signed=synthetic-private-material'
+  f.control.submit.targetUrl = 'https://maliprod.alipay.com/?signed=synthetic-private-material'
   f.control.submit.extraMap = { cashierOrderNo: 'V2_synthetic' }
   f.cashier.agentPayments = {
     prepare: async id => paymentSessionUuid(id),
@@ -79,6 +79,7 @@ test('official Agent Pay uses Host identity and keeps verification material out 
     assert.equal(calls.length, 1)
     assert.equal(calls[0].paymentLink, f.control.submit.targetUrl)
     assert.equal(calls[0].sessionId, sessionId.slice(8))
+    assert.equal(calls[0].serviceContent, f.order.itemSummary)
     assert.equal((await f.cashier.history([f.order])).get(orderRef).paymentUrl, shortUrl)
     assert.equal((await f.cashier.providerReceipt({ orderRef })).submit.receipt.outShakeNo, queryRef)
     for (const privateValue of [shortUrl, queryRef, 'synthetic-private-material', sessionId.slice(8)]) {
@@ -98,6 +99,17 @@ test('missing Host identity stops configured Agent Pay before creating any payme
   try {
     const prepared = await f.cashier.prepare({ orderRef })
     await assert.rejects(f.pay(prepared), { code: 'payment-session-missing' })
+    assert.equal(f.calls.filter(call => call.api === 'submit').length, 0)
+    assert.deepEqual((await f.cashier.ledger()).attempts, [])
+  } finally { await f.dispose() }
+})
+
+test('legacy orders without confirmed item summaries cannot initiate Agent Pay', async () => {
+  const f = await fixture()
+  delete f.order.itemSummary
+  f.cashier.agentPayments = { prepare: async () => assert.fail('must not prepare'), submit: async () => assert.fail('must not submit') }
+  try {
+    await assert.rejects(f.pay(await f.cashier.prepare({ orderRef })), { code: 'payment-summary-missing' })
     assert.equal(f.calls.filter(call => call.api === 'submit').length, 0)
     assert.deepEqual((await f.cashier.ledger()).attempts, [])
   } finally { await f.dispose() }
@@ -153,6 +165,8 @@ test('cashier browser parameters require a single official checkout reference', 
   for (const value of ['https://r.ele.me/payment', 'https://r.ele.me/payment?termNos=1&termNos=2',
     'https://r.ele.me/payment?termNos=1&mtopType=TANWAI', 'https://attacker.test/?termNos=1']) assert.throws(() => cashierParameters(value))
   assert.equal(providerPaymentUrl('https://mclient.alipay.com/cashier?synthetic=1'), 'https://mclient.alipay.com/cashier?synthetic=1')
+  assert.equal(providerPaymentUrl('https://maliprod.alipay.com/wap?synthetic=1'), 'https://maliprod.alipay.com/wap?synthetic=1')
+  assert.equal(providerPaymentUrl('https://maliprod.alipay.com.attacker.test/'), null)
   for (const value of ['https://mclient.alipay.com.attacker.test/', 'https://u:p@mclient.alipay.com/', 'alipays://start', 'sdk-secret']) assert.equal(providerPaymentUrl(value), null)
 })
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.21
+
+- Accept the exact HTTPS maliprod.alipay.com destination returned by the official Taobao cashier, preserving its signed bytes.
+- Read terminal CLI results in both code/data and success/status formats without treating transport success as payment success.
+- Pass the confirmed item summary to Agent Pay and retain fixed rejection reasons in diagnostics. See MIGRATION-0.8.21.md.
+
 ## 0.8.20
 
 - Group budget limits, payment mode, quote lifetime and Alipay CLI configuration in a dedicated Payment settings tab.
