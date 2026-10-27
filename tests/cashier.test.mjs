@@ -282,6 +282,9 @@ test('official WAP gateways preserve signed parameters and reject unrelated path
     ['https://u:p@mapi.alipay.com/gateway.do', 'embedded-credentials'],
     ['https://mapi.alipay.com.attacker.test/gateway.do?secret=private', 'unrecognized-host'],
     ['not-a-url-private', 'invalid-url'],
+    [['https://openapi.alipay.com/gateway.do?synthetic=1'], 'invalid-url'],
+    ['https://openapi.alipay.com/gateway.do?sign=synthetic\nvalue', 'invalid-url'],
+    [' https://openapi.alipay.com/gateway.do?sign=synthetic', 'invalid-url'],
   ]) {
     assert.deepEqual(providerPaymentDestination(target), { reason, url: null })
     const diagnostic = paymentResponseDiagnostic({ payResult: 'UNKNOWN', payAction: 'H5_URL', targetUrl: target })
@@ -289,6 +292,9 @@ test('official WAP gateways preserve signed parameters and reject unrelated path
     assert.equal(diagnostic.handoffAccepted, false)
     for (const secret of ['private', 'attacker', 'https:', 'u:p']) assert(!JSON.stringify(diagnostic).includes(secret))
   }
+  const signed = 'https://openapi.alipay.com/gateway.do?sign=synthetic%2bvalue+%20&part=1&part=2'
+  assert.equal(providerPaymentUrl(signed), signed)
+  assert.equal(paymentHandoffUrl({ payAction: 'THIRD_PAY', targetUrl: JSON.stringify({ targetUrl: [signed] }) }), null)
 })
 
 test('native SDK requests stay unknown until a supported bridge can deliver the original verification', async () => {

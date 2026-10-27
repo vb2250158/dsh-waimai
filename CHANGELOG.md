@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.18
+
+- Reject non-string payment targets and raw whitespace or control characters; pass accepted signed destinations through without URL serialization.
+
 ## 0.8.17
 
 - Accept official Alipay WAP gateway handoffs at the exact HTTPS `mapi.alipay.com/gateway.do` and `openapi.alipay.com/gateway.do` endpoints without changing signed query parameters.
