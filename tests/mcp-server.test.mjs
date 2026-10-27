@@ -13,6 +13,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 
@@ -84,15 +86,19 @@ const EXPECTED_TOOLS = [
  * @returns the connected client and a disposer that shuts it down.
  */
 async function connect(env = {}) {
+  const home = await mkdtemp(join(tmpdir(), 'waimai-mcp-test-'))
+  const environment = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
+    /^(SystemRoot|WINDIR|PATH|PATHEXT|TEMP|TMP)$/i.test(key)))
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [SERVER_ENTRY],
-    env: { ...process.env, ...env },
+    env: { ...environment, ...env, DSH_HOME: home, HOME: home, USERPROFILE: home },
     stderr: 'ignore',
   })
   const client = new Client({ name: 'dsh-waimai-test', version: '0.0.0' })
-  await client.connect(transport)
-  return { client, close: async () => { await client.close() } }
+  try { await client.connect(transport) }
+  catch (error) { await transport.close(); await rm(home, { recursive: true, force: true }); throw error }
+  return { client, close: async () => { try { await client.close() } finally { await rm(home, { recursive: true, force: true }) } } }
 }
 
 test('the server advertises every takeaway tool', async () => {

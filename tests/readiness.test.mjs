@@ -49,7 +49,7 @@ test('payment reservations enforce cumulative budgets and survive an uncertain r
   const dir = await mkdtemp(join(tmpdir(), 'waimai-payment-'))
   try {
     const path = join(dir, 'payments.json')
-    const limits = { cap: 35, globalBudget: 50, taskBudget: 50, taskId: task.id, whitelist: ['示例店'] }
+    const limits = { cap: 35, globalBudget: 50, taskBudget: 50, taskId: task.id }
     const now = new Date(2026, 9, 12)
     const order = { id: 'synthetic-order-1', merchant: '示例店', amount: 28 }
     await reservePayment(path, order, limits, now)
@@ -57,7 +57,7 @@ test('payment reservations enforce cumulative budgets and survive an uncertain r
     await assert.rejects(reservePayment(path, { ...order, id: 'synthetic-order-2' }, limits, now), /全局每日/)
     await assert.rejects(reservePayment(path, { ...order, id: 'task-over-budget' }, { ...limits, globalBudget: 100 }, now), /任务每日/)
     await reservePayment(path, { ...order, id: 'different-task' }, { ...limits, globalBudget: 100, taskId: 'other-task' }, now)
-    await assert.rejects(reservePayment(path, { ...order, id: 'synthetic-order-3', merchant: '伪造示例店' }, limits, now), /白名单/)
+    await reservePayment(path, { ...order, id: 'synthetic-other-merchant', merchant: '另一家店' }, { ...limits, globalBudget: 200, taskBudget: 200 }, now)
     await assert.rejects(reservePayment(path, { ...order, id: '' }, limits, now), /订单编号/)
     assert.equal((await readPayments(path)).orders[order.id].status, 'pending')
     await reservePayment(path, { ...order, id: 'next-day-order' }, limits, new Date(2026, 9, 13))
@@ -85,7 +85,7 @@ test('a preview tick persists its claim before notification and does not run twi
   }
   try {
     apply(ctx, Config({ dryRun: true, headless: true, maxOrderAmount: 35, dailyBudget: 50,
-      paymentMode: 'manual', merchantWhitelist: [],
+      paymentMode: 'manual',
       autoTasks: [{ ...task, enabled: true, triggerTime, dateRule: 'everyday', notifyOnSuccess: true }] }))
     await callback()
     const saved = await readState(join(dir, 'waimai', 'automation-state.json'))

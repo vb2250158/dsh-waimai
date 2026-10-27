@@ -540,7 +540,9 @@ async function mount(rpc, options = {}) {
     clearTimeout: options.clearTimeout || clearTimeout, crypto: { randomUUID },
   })
   const snapshot = { status: 'ready', writable: true, revision: 1, value: Config(options.config || {}).get() }
-  const form = { subscribe: () => () => {}, getSnapshot: () => snapshot, mutate: options.mutate || (async () => true) }
+  const listeners = new Set()
+  let currentSnapshot = snapshot
+  const form = { subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener) }, getSnapshot: () => currentSnapshot, mutate: options.mutate || (async () => true) }
   const ctx = {
     effect(fn) { disposers.push(fn()) }, connection: { rpc },
     locale: { register(_namespace, values) { dictionary = values.zh; return () => {} }, bind: () => key => dictionary[key] },
@@ -550,7 +552,10 @@ async function mount(rpc, options = {}) {
   module.apply(ctx)
   let renderer
   await act(async () => { const selected = options.tool ? toolCards.get(options.tool.name) : { component: Card, props: cardProps }; renderer = create(React.createElement(selected.component, { ...selected.props, toolName: options.tool?.name, ...options.tool?.props })) })
-  return { renderer, close: () => { act(() => renderer.unmount()); for (const dispose of disposers.reverse()) dispose?.() } }
+  return { renderer, updateConfig: config => {
+    currentSnapshot = { ...currentSnapshot, revision: currentSnapshot.revision + 1, value: Config(config).get() }
+    for (const listener of listeners) listener()
+  }, close: () => { act(() => renderer.unmount()); for (const dispose of disposers.reverse()) dispose?.() } }
 }
 
 test('stale platform metadata shows a retry and never starts a login with missing methods', async () => {
@@ -1197,6 +1202,77 @@ test('advertising preference defaults to hidden and saves only the changed setti
   } finally { mounted.close() }
 })
 
+test('Alipay settings save only payment fields and connection checks use saved configuration without receiving a path', async () => {
+  const calls = []; let operations, connection = { configured: true, available: true, version: '0.4.8', reason: null }
+  const mounted = await mount({ async call(channel, endpoint, payload) {
+    if (endpoint === 'paymentConnection') { calls.push({ channel, endpoint, payload }); return ok(connection) }
+    return endpoint === 'profile' ? ok(profile) : ok({ authenticated: true, state: 'logged-in' })
+  } }, { mutate: async ops => { operations = structuredClone(ops); return true } })
+  try {
+    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
+    await act(async () => button('点单设置').props.onClick())
+    const input = label => root.findAll(node => node.type === 'span' && node.props['aria-label'] === label)[0]
+    for (const label of ['单笔上限', '每日上限', '支付宝 CLI 绝对路径', '连接超时（毫秒）', '报价有效期（秒）']) assert.equal(input(label), undefined)
+    assert.equal(root.findAllByProps({ 'aria-label': '自动支付白名单' }).length, 0)
+    await act(async () => button('支付配置').props.onClick())
+    assert.equal(root.findByType('form').props.hidden, false)
+    assert.equal(button('支付配置').props['aria-pressed'], true)
+    assert.deepEqual(root.findByType('nav').findAllByType('button').map(node => text(node.props.children)),
+      ['账号与地址', '点餐', '历史订单', '自动化任务', '支付配置', '点单设置'])
+    assert.equal(root.findAllByProps({ 'aria-label': '自动支付白名单' }).length, 0)
+    assert(root.findAll(node => node.props.selectedId === 'manual' && node.props.className === 'waimai-choice').length)
+    assert.equal(input('报价有效期（秒）').props.min, 30)
+    assert.equal(input('连接超时（毫秒）').props.min, 1000)
+    assert.equal(input('连接超时（毫秒）').props.max, 120000)
+    assert.equal(root.findAll(node => node.props.type === 'password').length, 0)
+    await act(async () => input('支付宝 CLI 绝对路径').props.onChange({ target: { value: 'C:/tools/alipay-bot.exe' } }))
+    await act(async () => input('连接超时（毫秒）').props.onChange({ target: { value: '45000' } }))
+    await act(async () => input('单笔上限').props.onChange({ target: { value: '50' } }))
+    await act(async () => input('每日上限').props.onChange({ target: { value: '100' } }))
+    assert.equal(button('检查连接').props.disabled, true)
+    assert(text(mounted.renderer.toJSON()).includes('请先保存再检查连接'))
+    await act(async () => button('检查连接').props.onClick())
+    assert.equal(calls.length, 0)
+    await act(async () => root.findByType('form').props.onSubmit({ preventDefault() {} }))
+    assert(operations.every(op => op.op === 'set' && op.path.length === 1))
+    assert.deepEqual(Object.fromEntries(operations.map(op => [op.path[0], op.value])),
+      { alipayAgentExecutable: 'C:/tools/alipay-bot.exe', alipayAgentTimeoutMs: 45000, maxOrderAmount: 50, dailyBudget: 100 })
+    await act(async () => mounted.updateConfig({ alipayAgentExecutable: 'C:/tools/alipay-bot.exe', alipayAgentTimeoutMs: 45000, maxOrderAmount: 50, dailyBudget: 100 }))
+    assert.equal(button('检查连接').props.disabled, false)
+    await act(async () => button('检查连接').props.onClick())
+    assert.deepEqual(structuredClone(calls), [{ channel: '/waimai-login', endpoint: 'paymentConnection', payload: {} }])
+    assert(text(mounted.renderer.toJSON()).includes('支付宝 CLI 连接正常 · 0.4.8'))
+    for (const [reason, label] of [['not-configured', '未配置支付宝 CLI'], ['invalid-path', '请填写支付宝 CLI 文件的绝对路径'],
+      ['unavailable', '无法连接支付宝 CLI'], ['unexpected-version', 'CLI 版本响应无法识别']]) {
+      connection = { configured: reason !== 'not-configured', available: false, version: null, reason }
+      await act(async () => button('检查连接').props.onClick())
+      assert(text(mounted.renderer.toJSON()).includes(label))
+      assert(!text(mounted.renderer.toJSON()).includes('连接正常'))
+    }
+  } finally { mounted.close() }
+})
+
+test('Alipay connection checks discard stale replies and hide raw RPC errors', async () => {
+  let pending = deferred(), fail = false
+  const mounted = await mount({ async call(_channel, endpoint) {
+    if (endpoint === 'paymentConnection') { if (fail) throw new Error('synthetic-private-error'); return pending.promise }
+    return endpoint === 'profile' ? ok(profile) : ok({ authenticated: true, state: 'logged-in' })
+  } })
+  try {
+    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
+    await act(async () => button('支付配置').props.onClick())
+    await act(async () => { void button('检查连接').props.onClick() })
+    assert.equal(button('正在检查…').props.disabled, true)
+    await act(async () => mounted.updateConfig({ alipayAgentTimeoutMs: 40000 }))
+    await act(async () => pending.resolve(ok({ configured: true, available: true, version: 'stale-version', reason: null })))
+    assert(!text(mounted.renderer.toJSON()).includes('stale-version'))
+    fail = true
+    await act(async () => button('检查连接').props.onClick())
+    assert(text(mounted.renderer.toJSON()).includes('无法连接支付宝 CLI'))
+    assert(!text(mounted.renderer.toJSON()).includes('synthetic-private-error'))
+  } finally { mounted.close() }
+})
+
 test('the task view shows only its platform and edits preserve tasks belonging to other platforms', async () => {
   let operations
   const config = { autoTasks: [{ id: 'other', name: '其他平台任务', platformId: 'jd' }, { id: 'current', name: '当前平台任务', platformId: 'taobao' }] }
@@ -1212,5 +1288,6 @@ test('the task view shows only its platform and edits preserve tasks belonging t
     await act(async () => root.findByType('form').props.onSubmit({ preventDefault() {} }))
     assert.equal(operations[0].value[0].name, '其他平台任务')
     assert.equal(operations[0].value[1].name, '修改后的任务')
+    assert(!text(mounted.renderer.toJSON()).includes('白名单'))
   } finally { mounted.close() }
 })

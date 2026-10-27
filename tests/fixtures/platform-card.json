@@ -10,6 +10,7 @@
     { "label": "点餐", "selected": false },
     { "label": "历史订单", "selected": false },
     { "label": "自动化任务", "selected": false },
+    { "label": "支付配置", "selected": false },
     { "label": "点单设置", "selected": false }
   ]
 }

@@ -24,7 +24,7 @@ import {
   spentOn,
   toDateKey,
 } from '../lib/automation.js'
-import { childEnv, effectiveCap, effectiveDailyBudget, effectiveWhitelist } from '../lib/env.js'
+import { childEnv, effectiveCap, effectiveDailyBudget } from '../lib/env.js'
 import { createSkillProvider, parseSkillFile } from '../lib/skill-provider.js'
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -146,20 +146,12 @@ test('a zero plugin budget leaves the task budget standing alone', () => {
   assert.equal(effectiveDailyBudget(config, { dailyBudget: 50 }), 50)
 })
 
-test('a non-empty task whitelist replaces the global one', () => {
-  const config = { merchantWhitelist: ['Global'] }
-  assert.deepEqual(effectiveWhitelist(config, undefined), ['Global'])
-  assert.deepEqual(effectiveWhitelist(config, { merchantWhitelist: ['Task'] }), ['Task'])
-  assert.deepEqual(effectiveWhitelist(config, { merchantWhitelist: [] }), ['Global'])
-})
-
 test('childEnv carries the narrowed limits to the server', () => {
   const config = {
     headless: false,
     maxOrderAmount: 35,
     dailyBudget: 100,
     paymentMode: 'auto',
-    merchantWhitelist: ['Global'],
   }
   const env = childEnv(config, undefined)
   assert.equal(env.MAX_ORDER_AMOUNT, '35')
@@ -168,20 +160,19 @@ test('childEnv carries the narrowed limits to the server', () => {
   assert.equal(env.HIDE_SPONSORED_SHOPS, 'true')
   assert.equal(childEnv({ ...config, hideSponsoredShops: false }).HIDE_SPONSORED_SHOPS, 'false')
   assert.equal(env.HEADLESS, undefined)
-  assert.deepEqual(JSON.parse(env.MERCHANT_WHITELIST), ['Global'])
+  assert.equal(Object.hasOwn(env, 'MERCHANT_WHITELIST'), false)
 
   const taskEnv = childEnv(config, {
     platformId: 'meituan',
     maxOrderAmount: 20,
     dailyBudget: 40,
     paymentMode: 'manual',
-    merchantWhitelist: ['Task'],
   })
   assert.equal(taskEnv.MAX_ORDER_AMOUNT, '20')
   assert.equal(taskEnv.DEFAULT_PLATFORM, 'meituan')
   assert.equal(taskEnv.DAILY_BUDGET, '40')
   assert.equal(taskEnv.PAYMENT_MODE, 'manual')
-  assert.deepEqual(JSON.parse(taskEnv.MERCHANT_WHITELIST), ['Task'])
+  assert.equal(Object.hasOwn(taskEnv, 'MERCHANT_WHITELIST'), false)
 })
 
 test('Alipay Agent Pay configuration is optional and reaches every child with bounded timeout', async () => {

@@ -1,9 +1,20 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { AlipayAgentPayments, alipayAgentDestination, alipayAgentReferences, paymentSessionUuid } from '../lib/alipay-agent.js'
+import { AlipayAgentPayments, alipayAgentDestination, alipayAgentReferences, paymentSessionUuid, inspectAlipayAgent } from '../lib/alipay-agent.js'
 
 const sessionId = '008283f7-fee1-4219-be64-06cf151e20b3'
 const queryRef = '20260617008282174448790088372682'
+
+test('connection check uses the configured executable and distinguishes setup from wallet authorization', async () => {
+  const options = { executable: '', timeoutMs: 1000 }
+  assert.deepEqual(await inspectAlipayAgent(options), { configured: false, available: false, version: null, reason: 'not-configured' })
+  assert.equal((await inspectAlipayAgent({ ...options, executable: 'relative-path' })).reason, 'invalid-path')
+  assert.equal((await inspectAlipayAgent({ ...options, executable: import.meta.dirname })).reason, 'invalid-path')
+  assert.equal((await inspectAlipayAgent({ ...options, executable: process.execPath + '.missing' })).reason, 'invalid-path')
+  // A different valid program must not be reported as an available payment provider.
+  assert.deepEqual(await inspectAlipayAgent({ ...options, executable: process.execPath }),
+    { configured: true, available: false, version: null, reason: 'unexpected-version' })
+})
 
 test('payment session uses the Host UUID and rejects missing or fabricated identifiers', () => {
   assert.equal(paymentSessionUuid('session-' + sessionId), sessionId)

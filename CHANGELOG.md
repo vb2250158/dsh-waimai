@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.20
+
+- Group budget limits, payment mode, quote lifetime and Alipay CLI configuration in a dedicated Payment settings tab.
+- Add an authenticated saved-configuration connection check that reads the CLI version without querying a wallet or submitting payment.
+- Remove global and task merchant whitelists from configuration, UI and payment reservations. Existing budgets and duplicate-payment checks remain enforced; see MIGRATION-0.8.20.md.
+
 ## 0.8.19
 
 - Add an opt-in official Alipay Agent Pay process adapter with Host-owned session identity, private receipts and one durable attempt per order.

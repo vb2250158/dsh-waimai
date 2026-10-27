@@ -232,12 +232,13 @@ test('account reads stop on expired sessions, account mismatch, rejected transpo
 })
 
 test('login HTTP channel authorizes, validates RPC envelopes and excludes secrets from replies', async () => {
-  let route, called = 0
+  let route, called = 0, paymentChecks = 0
   const ctx = { inject(names, callback) {
     assert.deepEqual(names, ['connection', 'webServer'])
     callback({ effect:create => create(), connection: { requestRejection: req => req.headers.authorization === 'synthetic-host-session' ? undefined : 401 }, webServer: { register(value) { route = value; return () => {} } } })
   } }
-  registerLoginRpc(ctx, { async call(name) { called++; assert(LOGIN_TOOLS.includes(name)); return { success: true, data: { state: 'logged-out' } } } })
+  registerLoginRpc(ctx, { async call(name) { called++; assert(LOGIN_TOOLS.includes(name)); return { success: true, data: { state: 'logged-out' } } } },
+    { async paymentConnection() { paymentChecks++; return { configured: false, available: false, version: null, reason: 'not-configured' } } })
   assert.equal(route.path, '/waimai-login')
   const server = createServer((req, res) => { void route.handler(req, res) })
   server.listen(0, '127.0.0.1'); await once(server, 'listening')
@@ -298,6 +299,14 @@ test('login HTTP channel authorizes, validates RPC envelopes and excludes secret
     const receiptResponse = await call('paymentProviderReceipt', receipt)
     assert.equal(receiptResponse.headers.get('cache-control'), 'no-store')
     assert.equal((await receiptResponse.json()).result.ok, true)
+    assert.equal(called, 10)
+    assert.equal((await call('paymentConnection', {}, { headers: { authorization: '' } })).status, 401)
+    assert.equal((await (await call('paymentConnection', { executable: '/untrusted/program' })).json()).result.ok, false)
+    assert.equal(called, 10)
+    const connection = await (await call('paymentConnection', {})).json()
+    assert.equal(connection.result.ok, true)
+    assert.deepEqual(connection.result.value, { configured: false, available: false, version: null, reason: 'not-configured' })
+    assert.equal(paymentChecks, 1)
     assert.equal(called, 10)
   } finally { server.closeAllConnections(); await new Promise(resolve=>server.close(resolve)) }
 })
