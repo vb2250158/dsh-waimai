@@ -49,10 +49,16 @@ test('private process captures final JSON without equating process success with 
   const provider = new AlipayAgentPayments({ executable: process.execPath, timeoutMs: 2000 })
   assert.equal(await provider.prepare('session-' + sessionId), sessionId)
   const response = await provider.run(['-e', 'process.stdout.write(JSON.stringify({code:200,status:"pending"}))', '--'])
-  assert.deepEqual(response, { completed: true, receipt: { code: 200, status: 'pending' } })
+  assert.equal(response.completed, true)
+  assert.deepEqual(response.receipt, { code: 200, status: 'pending' })
+  assert.equal(response.execution.exitCode, 0)
+  assert.equal(response.output, undefined)
   const failed = await provider.run(['-e', 'process.stderr.write("synthetic-secret-url");process.exit(1)', '--'])
-  assert.deepEqual(failed, { completed: false, receipt: null })
-  assert(!JSON.stringify(failed).includes('synthetic-secret'))
+  assert.equal(failed.completed, false)
+  assert.equal(failed.receipt, null)
+  assert.deepEqual(failed.execution, { reason: 'nonzero-exit', exitCode: 1, stdoutBytes: 0, stderrBytes: 20 })
+  assert.equal(failed.output.stderr, 'synthetic-secret-url')
+  assert(!JSON.stringify(failed.execution).includes('synthetic-secret'))
 })
 
 test('private process reads only the terminal command result after diagnostic output', async () => {
@@ -60,7 +66,8 @@ test('private process reads only the terminal command result after diagnostic ou
   const run = stdout => provider.run(['-e', `process.stdout.write(${JSON.stringify(stdout)})`, '--'])
   const result = { code: 200, data: { status: 'pending', outShakeNo: queryRef } }
   const response = await run('Update recommended\nINFO diagnostic {"shortUrl":"https://u.alipay.com/synthetic-log"}\n' + JSON.stringify(result, null, 2) + '\n')
-  assert.deepEqual(response, { completed: true, receipt: result })
+  assert.equal(response.completed, true)
+  assert.deepEqual(response.receipt, result)
   assert.deepEqual(alipayAgentReferences(response.receipt), { paymentUrl: null, queryRef })
   const cliResult = { entry: 'submit-payment', errorCode: 'INVALID_PARAMETER', errorMessage: '参数异常', outShakeNo: 'invalid', status: 'UNKNOWN', success: false }
   assert.deepEqual((await run(JSON.stringify(cliResult, null, 2))).receipt, cliResult)
@@ -70,6 +77,18 @@ test('private process reads only the terminal command result after diagnostic ou
     JSON.stringify({ code: 200, level: 'info', shortUrl: 'https://u.alipay.com/synthetic-log' }),
     JSON.stringify({ data: { shortUrl: 'https://u.alipay.com/synthetic-log' } }),
   ]) assert.equal((await run(stdout)).receipt, null)
+})
+
+test('process diagnostics distinguish spawn failure and timeout without exposing command arguments', async () => {
+  const missing = new AlipayAgentPayments({ executable: process.execPath + '.missing', timeoutMs: 1000 })
+  const absent = await missing.run(['synthetic-secret'])
+  assert.equal(absent.execution.reason, 'spawn-failed')
+  assert.equal(absent.execution.exitCode, null)
+  assert(!JSON.stringify(absent).includes('synthetic-secret'))
+  const slow = new AlipayAgentPayments({ executable: process.execPath, timeoutMs: 100 })
+  const timedOut = await slow.run(['-e', 'setTimeout(()=>{},10000)', '--'])
+  assert.equal(timedOut.execution.reason, 'terminated')
+  assert.equal(timedOut.completed, false)
 })
 
 test('submit uses one private argv invocation and a verified summary, while query cannot submit', async () => {

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.22
+
+- Retain non-JSON payment CLI output in authenticated transient diagnostics and log credential-free execution classifications instead of discarding process failures.
+
 ## 0.8.21
 
 - Accept the exact HTTPS maliprod.alipay.com destination returned by the official Taobao cashier, preserving its signed bytes.

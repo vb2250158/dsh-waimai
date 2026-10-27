@@ -142,6 +142,25 @@ test('CLI transport success without a supported receipt remains unknown and cann
   } finally { await f.dispose() }
 })
 
+test('unstructured process failures stay private while logs retain execution diagnostics', async () => {
+  const f = await fixture()
+  const response = { completed: false, receipt: null,
+    execution: { reason: 'nonzero-exit', exitCode: 1, stdoutBytes: 0, stderrBytes: 24 },
+    output: { stdout: '', stderr: 'synthetic-private-output' } }
+  f.cashier.agentPayments = { prepare: async () => '008283f7-fee1-4219-be64-06cf151e20b3', submit: async () => response }
+  try {
+    const result = await f.pay(await f.cashier.prepare({ orderRef }))
+    assert.equal(result.paymentStatus, 'unknown')
+    assert.deepEqual((await f.cashier.providerReceipt({ orderRef })).submit, response)
+    const log = f.logs.find(value => value.stage === 'agent-payment-response')
+    assert.equal(log.executionReason, 'nonzero-exit')
+    assert.equal(log.exitCode, 1)
+    assert.equal(log.stderrBytes, 24)
+    for (const value of [result, f.logs, await f.cashier.ledger()]) assert(!JSON.stringify(value).includes('synthetic-private-output'))
+    await assert.rejects(f.cashier.prepare({ orderRef }), { code: 'payment-already-attempted' })
+  } finally { await f.dispose() }
+})
+
 test('a provider query reference survives restart without persisting URLs or issuing another submit', async () => {
   const f = await fixture(), queryRef = '20260617008282174448790088372682', queries = []
   f.cashier.agentPayments = { prepare: async () => '008283f7-fee1-4219-be64-06cf151e20b3',
