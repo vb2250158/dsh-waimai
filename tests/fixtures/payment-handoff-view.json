@@ -1,10 +1,12 @@
 [
-  { "state": "unknown", "retained": false, "links": 0, "notices": ["付款结果未知，请核对状态，勿重复付款"] },
-  { "state": "paid", "retained": false, "links": 0, "notices": ["付款已确认"] },
-  { "state": "failed", "retained": false, "links": 0, "notices": ["本次付款未成功"] },
-  { "state": "requires-verification", "retained": false, "links": 0, "notices": ["原付款验证入口不可用，请先核对付款结果，勿再次付款。"] },
-  { "state": "requires-verification", "retained": true, "links": 1, "notices": ["已发起付款，请完成官方支付验证"] },
-  { "state": "unconfirmed", "retained": false, "links": 1, "notices": [] },
-  { "state": "unknown", "retained": false, "providerErrorCode": "PAYMENT_LINK_UNSUPPORTED", "links": 0, "notices": ["支付宝支付工具不支持此收银台链接；请先核对订单状态，勿重复付款"] },
-  { "state": "paid", "retained": false, "providerErrorCode": "PAYMENT_LINK_UNSUPPORTED", "links": 0, "notices": ["付款已确认"] }
+  {"state":"unknown","retained":false,"links":0,"notices":["付款结果未知，请核对状态，勿重复付款"]},
+  {"state":"paid","retained":false,"links":0,"notices":["付款已确认"]},
+  {"state":"failed","retained":false,"links":0,"notices":["本次付款未成功"]},
+  {"state":"requires-verification","retained":false,"links":0,"notices":["原付款验证入口不可用，请先核对付款结果，勿再次付款。"]},
+  {"state":"requires-verification","retained":true,"links":1,"notices":["已发起付款，请完成官方支付验证"]},
+  {"state":"unconfirmed","retained":false,"links":1,"notices":[]},
+  {"state":"unknown","retained":false,"providerErrorCode":"PAYMENT_LINK_UNSUPPORTED","links":0,"notices":["支付宝支付工具不支持此收银台链接；请先核对订单状态，勿重复付款"]},
+  {"state":"paid","retained":false,"providerErrorCode":"PAYMENT_LINK_UNSUPPORTED","links":0,"notices":["付款已确认"]},
+  {"state":"requires-verification","retained":true,"providerErrorCode":"PAYMENT_LINK_UNSUPPORTED","links":1,"notices":["支付宝支付工具未受理此链接，可打开本订单的官方收银台继续付款；尚未确认扣款。"]},
+  {"state":"requires-verification","retained":false,"providerErrorCode":"PAYMENT_LINK_UNSUPPORTED","links":0,"notices":["支付宝支付工具不支持此收银台链接；请先核对订单状态，勿重复付款"]}
 ]

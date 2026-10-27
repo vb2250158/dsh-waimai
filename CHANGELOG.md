@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.24
+
+- Keep the original official cashier available when Agent Pay explicitly rejects its link, without another payment submission or exposing signed URLs in logs.
+
 ## 0.8.23
 
 - Parse versioned CLI error results and show unsupported cashier links on payment cards without inferring payment status or retrying.

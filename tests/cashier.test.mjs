@@ -161,21 +161,41 @@ test('unstructured process failures stay private while logs retain execution dia
   } finally { await f.dispose() }
 })
 
-test('unsupported cashier links report the provider rejection without settling or retrying payment', async () => {
+test('a rejected CLI link retains the original cashier without retrying or using it as an Agent Pay query', async () => {
   const f = await fixture()
+  f.control.submit.targetUrl = 'https://maliprod.alipay.com/?signed=synthetic-private-material'
   f.cashier.agentPayments = { prepare: async () => '008283f7-fee1-4219-be64-06cf151e20b3',
+    queryLink: async () => assert.fail('original cashier is not an Agent Pay query link'),
     submit: async () => ({ completed: false, receipt: { command: 'submit-payment', schemaVersion: '1.0',
       success: false, errorCode: 'PAYMENT_LINK_UNSUPPORTED', errorMsg: 'private provider details' } }) }
   try {
     const result = await f.pay(await f.cashier.prepare({ orderRef }))
-    assert.equal(result.paymentStatus, 'unknown')
+    assert.equal(result.paymentStatus, 'requires-verification')
     assert.equal(result.providerErrorCode, 'PAYMENT_LINK_UNSUPPORTED')
+    assert.equal((await f.cashier.history([f.order])).get(orderRef).paymentUrl, f.control.submit.targetUrl)
+    assert.equal((await f.cashier.ledger()).attempts[0].provider, undefined)
     const status = await f.cashier.status({ orderRef })
     assert.equal(status.providerErrorCode, 'PAYMENT_LINK_UNSUPPORTED')
-    assert.equal(status.paymentStatus, 'unknown')
+    assert.equal(status.paymentStatus, 'requires-verification')
+    assert.equal(status.paymentQueryAvailable, false)
     assert(!JSON.stringify({result,status,logs:f.logs}).includes('private provider details'))
+    assert(!JSON.stringify({result,status,logs:f.logs,ledger:await f.cashier.ledger()}).includes('synthetic-private-material'))
     await assert.rejects(f.cashier.prepare({ orderRef }), { code: 'payment-already-attempted' })
     assert.equal(f.calls.filter(call => call.api === 'submit').length, 1)
+    const restarted = new TaobaoCashier(f.trade)
+    assert.equal((await restarted.history([f.order])).get(orderRef).paymentHandoffAvailable, false)
+    await assert.rejects(restarted.prepare({ orderRef }), { code: 'payment-already-attempted' })
+  } finally { await f.dispose() }
+})
+
+test('an unsupported CLI result cannot expose an unapproved original destination', async () => {
+  const f = await fixture()
+  f.control.submit.targetUrl = 'https://attacker.test/?signed=synthetic-private-material'
+  f.cashier.agentPayments = { prepare: async () => '008283f7-fee1-4219-be64-06cf151e20b3',
+    submit: async () => ({ completed: false, receipt: { success: false, errorCode: 'PAYMENT_LINK_UNSUPPORTED' } }) }
+  try {
+    assert.equal((await f.pay(await f.cashier.prepare({ orderRef }))).paymentStatus, 'unknown')
+    assert.equal((await f.cashier.history([f.order])).get(orderRef).paymentUrl, null)
   } finally { await f.dispose() }
 })
 

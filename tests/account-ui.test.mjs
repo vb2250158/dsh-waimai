@@ -225,7 +225,7 @@ test('payment cards read official order states without requiring a delivery addr
 
 test('payment cards hide generic cashier links for unresolved attempts and resume only the retained verification handoff', async () => {
   const accountRef = '11111111-1111-4111-8111-111111111111', views = []
-  for (const [state, retained, providerErrorCode] of [['unknown', false], ['paid', false], ['failed', false], ['requires-verification', false], ['requires-verification', true], ['unconfirmed', false], ['unknown', false, 'PAYMENT_LINK_UNSUPPORTED'], ['paid', false, 'PAYMENT_LINK_UNSUPPORTED']]) {
+  for (const [state, retained, providerErrorCode] of [['unknown', false], ['paid', false], ['failed', false], ['requires-verification', false], ['requires-verification', true], ['unconfirmed', false], ['unknown', false, 'PAYMENT_LINK_UNSUPPORTED'], ['paid', false, 'PAYMENT_LINK_UNSUPPORTED'], ['requires-verification', true, 'PAYMENT_LINK_UNSUPPORTED'], ['requires-verification', false, 'PAYMENT_LINK_UNSUPPORTED']]) {
     const calls = [], officialOrders = [{ id: '123', status: '等待支付' }]
     const mounted = await mount({ async call(_channel, method) {
       calls.push(method)

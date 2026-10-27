@@ -1,5 +1,7 @@
 # dsh-waimai
 
+When the CLI explicitly returns `PAYMENT_LINK_UNSUPPORTED`, the plugin retains the same order’s original official cashier URL in process memory for the payment card. It does not create another order, resubmit payment, or use that URL as an Agent Pay query credential. The URL is excluded from logs and sessions; after process restart, an unavailable link allows status checks only. Other failures and unknown results do not activate this path.
+
 The adapter also parses CLI error receipts with `schemaVersion: 1.0`. `PAYMENT_LINK_UNSUPPORTED` appears on the conversation payment card without settling the official payment status or retrying. The current CLI/service has rejected a `maliprod.alipay.com` entry returned by Taobao in live testing; a saved configuration or successful connection check does not establish automatic payment support for these orders.
 
 When the payment CLI returns no parseable JSON, raw stdout and stderr remain in memory behind authenticated private diagnostics, outside model tool results, persistent files and ordinary logs. Logs retain only execution classification, exit code and output byte counts. Timeout, spawn failure and nonzero exit do not establish payment status or authorize a retry.
