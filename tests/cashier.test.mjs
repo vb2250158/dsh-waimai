@@ -218,7 +218,11 @@ test('a provider query reference survives restart without persisting URLs or iss
 })
 
 test('cashier browser parameters require a single official checkout reference', () => {
-  assert.equal(cashierParameters('https://r.ele.me/payment?checkoutOrderNos=123&payEntrance=TAOBAO_APPLET').payEntrance, 'WAP')
+  assert.equal(cashierParameters('https://r.ele.me/payment?checkoutOrderNos=123&payEntrance=TAOBAO_APPLET').payEntrance, 'TAOBAO_APPLET')
+  assert.equal(cashierParameters('https://r.ele.me/payment?termNos=123').payEntrance, 'WAP')
+  for (const suffix of ['&payEntrance=', '&payEntrance=WAP&payEntrance=APP']) {
+    assert.throws(() => cashierParameters('https://r.ele.me/payment?termNos=123' + suffix))
+  }
   for (const value of ['https://r.ele.me/payment', 'https://r.ele.me/payment?termNos=1&termNos=2',
     'https://r.ele.me/payment?termNos=1&mtopType=TANWAI', 'https://attacker.test/?termNos=1']) assert.throws(() => cashierParameters(value))
   assert.equal(providerPaymentUrl('https://mclient.alipay.com/cashier?synthetic=1'), 'https://mclient.alipay.com/cashier?synthetic=1')
@@ -414,7 +418,7 @@ test('payment diagnostics omit credentials, paths and parameters while identifyi
     [{ payResult: 'UNKNOWN', payAction: 'H5_URL', targetUrl: 'https://mclient.alipay.com/?secret=private' }, 'browser-url'],
     [{ payResult: 'UNKNOWN', payAction: 'THIRD_PAY', targetUrl: '{private' }, 'invalid-third-party-payload'],
     [{ payResult: 'UNKNOWN', payAction: 'THIRD_PAY', targetUrl: JSON.stringify({ targetUrl: 'https://attacker.test/?secret=private' }) }, 'unapproved-destination'],
-    [{ payResult: 'UNKNOWN', payAction: 'ALIPAY_SDK', targetUrl: 'private-sdk-secret' }, 'native-sdk-unavailable'],
+    [{ payResult: 'UNKNOWN', payAction: 'ALIPAY_SDK', targetUrl: 'private-sdk-secret' }, 'native-sdk-material'],
     [{ payResult: 'UNKNOWN', payAction: 'H5_URL' }, 'missing-target'],
     [{ payResult: 'UNKNOWN', payAction: 'private-action-secret', targetUrl: 'private-target' }, 'unsupported-action'],
     [{ payResult: 'private-result-secret' }, 'unrecognized-result'],
@@ -468,7 +472,47 @@ test('official WAP gateways preserve signed parameters and reject unrelated path
   assert.equal(paymentHandoffUrl({ payAction: 'THIRD_PAY', targetUrl: JSON.stringify({ targetUrl: [signed] }) }), null)
 })
 
-test('native SDK requests stay unknown until a supported bridge can deliver the original verification', async () => {
+test('SDK orders use the configured CLI once while preserving the official payment entrance', async () => {
+  const f = await fixture(), calls = [], material = 'app_id=synthetic&sign=private-sdk%2Bsecret'
+  f.control.submit = { payResult: 'UNKNOWN', payAction: 'ALIPAY_SDK', targetUrl: material,
+    extraMap: { cashierOrderNo: 'V2_synthetic' } }
+  f.cashier.agentPayments = { prepare: async () => '008283f7-fee1-4219-be64-06cf151e20b3',
+    submit: async args => { calls.push(args); return { completed: true, receipt: { code: 200, message: '支付成功' } } } }
+  try {
+    const result = await f.pay(await f.cashier.prepare({ orderRef }))
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].materialKind, 'sdk-order')
+    assert.equal(calls[0].paymentLink, material)
+    for (const call of f.calls.filter(call => ['consult', 'submit'].includes(call.api))) {
+      assert.equal(call.data.payEntrance, 'TAOBAO_APPLET')
+    }
+    assert.equal(result.paymentStatus, 'unknown')
+    assert.equal((await f.cashier.history([f.order])).get(orderRef).paymentHandoffAvailable, false)
+    assert(!JSON.stringify({ result, logs: f.logs, ledger: await f.cashier.ledger() }).includes(material))
+    await assert.rejects(f.cashier.prepare({ orderRef }), { code: 'payment-already-attempted' })
+    assert.equal(calls.length, 1)
+    f.control.query = { value: { batchStatus: 'S' } }
+    assert.equal((await f.cashier.status({ orderRef })).paymentStatus, 'paid')
+  } finally { await f.dispose() }
+})
+
+test('rejected SDK material has no browser fallback and cannot trigger a second payment', async () => {
+  const f = await fixture(), calls = []
+  f.control.submit = { payResult: 'UNKNOWN', payAction: 'ALIPAY_SDK', targetUrl: 'private-sdk-secret' }
+  f.cashier.agentPayments = { prepare: async () => '008283f7-fee1-4219-be64-06cf151e20b3',
+    submit: async args => { calls.push(args); return { completed: false, receipt: {
+      schemaVersion: '1.0', command: 'submit-payment', success: false, errorCode: 'PAYMENT_LINK_UNSUPPORTED' } } } }
+  try {
+    const result = await f.pay(await f.cashier.prepare({ orderRef }))
+    assert.equal(result.paymentStatus, 'unknown')
+    assert.equal(result.providerErrorCode, 'PAYMENT_LINK_UNSUPPORTED')
+    assert.equal((await f.cashier.history([f.order])).get(orderRef).paymentHandoffAvailable, false)
+    await assert.rejects(f.cashier.prepare({ orderRef }), { code: 'payment-already-attempted' })
+    assert.equal(calls.length, 1)
+  } finally { await f.dispose() }
+})
+
+test('native SDK requests stay unknown without a configured payment provider', async () => {
   const f = await fixture()
   try {
     f.control.submit = { payResult: 'UNKNOWN', extraMap: { payAction: 'ALIPAY_SDK', cashierOrderNo: 'V2_synthetic' }, targetUrl: 'private-sdk-secret' }

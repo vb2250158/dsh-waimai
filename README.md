@@ -1,5 +1,7 @@
 # dsh-waimai
 
+收银台咨询和提交保留官方入口中的 `payEntrance`，未提供时沿用 `WAP`。配置官方 CLI 后，`ALIPAY_SDK` 响应的原始订单串可通过私有进程参数传给 CLI，不重建签名，也不当作浏览器链接或查询凭证。CLI 回包仍须通过官方结果核对，未知结果不重复付款。此路径已用合成数据验证；淘宝闪购后台自动扣款尚未通过真实验收。
+
 CLI 明确返回 `PAYMENT_LINK_UNSUPPORTED` 时，插件在当前进程内保留同一订单的原始官方收银台入口，供付款卡片继续打开；不重新创建订单或提交付款，也不把原入口当作 Agent Pay 查询凭证。入口不会写入日志或会话；进程重建后不可恢复时，只提供状态核对。其他失败或未知结果不触发此分支。
 
 支付宝 CLI 的 `schemaVersion: 1.0` 错误回执也会解析。若返回 `PAYMENT_LINK_UNSUPPORTED`，会话付款卡片显示“不支持此收银台链接”，不把 CLI 拒绝当作官方付款失败或成功，不自动重试。已实测当前 CLI/服务拒绝淘宝返回的 `maliprod.alipay.com` 入口；配置和连接检查通过不代表此类订单可自动付款。
@@ -14,7 +16,7 @@ CLI 明确返回 `PAYMENT_LINK_UNSUPPORTED` 时，插件在当前进程内保留
 
 商超收银咨询使用官方浏览器请求域名、web 容器和 WAP 来源信息；不伪造设备字段。待支付详情缺少付款时间时保持未确认状态。
 
-支付宝网页验证入口支持既有收银台域名，以及[官方文档列出的两种手机网站支付网关](https://developer.alibaba.com/docs/doc.htm?articleId=107095&docType=1&treeId=203)：`https://mapi.alipay.com/gateway.do` 和 `https://openapi.alipay.com/gateway.do`。网关仅接受此路径，保留原签名参数。日志记录地址拒绝分类和协议、域名，不记录完整地址或查询参数。没有原生支付桥时，`ALIPAY_SDK` 保持结果未知，不显示已可验证；仅打开官方验证入口不代表付款成功，仍须回查官方结果。
+支付宝网页验证入口支持既有收银台域名，以及[官方文档列出的两种手机网站支付网关](https://developer.alibaba.com/docs/doc.htm?articleId=107095&docType=1&treeId=203)：`https://mapi.alipay.com/gateway.do` 和 `https://openapi.alipay.com/gateway.do`。网关仅接受此路径，保留原签名参数。日志记录地址拒绝分类和协议、域名，不记录完整地址或查询参数。未配置官方 CLI 时，`ALIPAY_SDK` 保持结果未知，不显示已可验证；仅打开官方验证入口不代表付款成功，仍须回查官方结果。
 
 付款回包诊断记录固定的结果、动作、验证入口分类以及协议、域名，不记录支付 URL、SDK 载荷或 extraMap 内容。付款结果未知、已付或失败时隐藏普通付款入口；需要验证时仅展示本次付款保留在内存中的原始入口。原始入口丢失后不使用订单详情的自动支付入口代替，也不再次发起付款；这些修复不改变既有未知付款的结果。
 

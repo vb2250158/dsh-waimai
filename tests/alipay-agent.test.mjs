@@ -94,6 +94,22 @@ test('process diagnostics distinguish spawn failure and timeout without exposing
   assert.equal(timedOut.completed, false)
 })
 
+test('SDK material preserves signed bytes and cannot be used as a URL or query reference', async () => {
+  const provider = new AlipayAgentPayments({ executable: process.execPath, timeoutMs: 2000 }), calls = []
+  provider.run = async args => { calls.push(args); return { completed: true, receipt: { code: 200 } } }
+  const paymentLink = 'app_id=synthetic&biz_content=%7B%22x%22%3A1%7D&sign=a%2Bb+c%3D&duplicate=1&duplicate=2'
+  const args = { paymentLink, materialKind: 'sdk-order', sessionId, amountCents: 4710, merchant: '示例店', serviceContent: '矿泉水一箱' }
+  await provider.submit(args)
+  assert.equal(calls[0][calls[0].indexOf('--payment-link') + 1], paymentLink)
+  for (const invalid of [null, {}, '', '  ', 'synthetic\0secret']) {
+    assert.throws(() => provider.submit({ ...args, paymentLink: invalid }), { code: 'payment-destination-unsupported' })
+  }
+  assert.throws(() => provider.submit({ ...args, materialKind: 'cashier-url' }), { code: 'payment-destination-unsupported' })
+  assert.throws(() => provider.submit({ ...args, materialKind: 'other' }), { code: 'payment-destination-unsupported' })
+  assert.throws(() => provider.queryLink(paymentLink), { code: 'payment-query-invalid' })
+  assert.equal(calls.length, 1)
+})
+
 test('submit uses one private argv invocation and a verified summary, while query cannot submit', async () => {
   const provider = new AlipayAgentPayments({ executable: process.execPath, timeoutMs: 2000 })
   const calls = []

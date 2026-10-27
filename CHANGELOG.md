@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.25
+
+- Preserve the official payment entrance during cashier consultation and submission.
+- Pass original SDK order strings to the configured Alipay CLI without exposing them as browser or query links; retain unknown-result and duplicate-payment safeguards. Live background payment acceptance remains unverified.
+
 ## 0.8.24
 
 - Keep the original official cashier available when Agent Pay explicitly rejects its link, without another payment submission or exposing signed URLs in logs.
