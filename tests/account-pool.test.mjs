@@ -56,6 +56,25 @@ test('saved accounts remain logged in together; view selection does not change t
   } finally { await f.close() }
 })
 
+test('private provider receipts retain account ownership and never invoke payment', async () => {
+  const f = await fixture()
+  try {
+    const account = await f.add('12345'), current = f.pool.active('taobao', account.viewAccountRef)
+    const args = { platformId: 'taobao', accountRef: account.viewAccountRef, orderRef: '11111111-1111-4111-8111-111111111111' }
+    let reads = 0
+    current.service.trade.cashier.providerReceipt = async input => {
+      assert.equal(input.orderRef, args.orderRef); reads++
+      return reads === 1 ? { privateProviderField: 'synthetic-private-receipt' } : null
+    }
+    current.service.trade.cashier.submit = () => { throw Error('Receipt read must not pay') }
+    assert.deepEqual(await f.pool.dispatch('paymentProviderReceipt', args), { receipt: { privateProviderField: 'synthetic-private-receipt' } })
+    assert.deepEqual(await f.pool.dispatch('paymentProviderReceipt', args), { receipt: null })
+    f.jars[0].identity = '99999'
+    await assert.rejects(f.pool.dispatch('paymentProviderReceipt', args), error => error.code === 'account-changed')
+    assert.equal(reads, 2)
+  } finally { await f.close() }
+})
+
 test('two account order reads run concurrently and return their own account data', async () => {
   const f = await fixture()
   try {

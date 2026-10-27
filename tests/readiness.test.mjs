@@ -116,8 +116,22 @@ test('the Host bridge executes advertised MCP tools and unregisters them on stop
     assert.equal(direct.data.dryRun, true)
     const tool = registered.get('mcp__waimai__get_status')
     for (const name of LOGIN_TOOLS) assert.equal(registered.has(`mcp__waimai__${name}`), false)
+    assert.equal(registered.has('mcp__waimai__account_payment_provider_receipt'), false)
     const result = await tool.execute({}, { signal: new AbortController().signal })
     assert.equal(JSON.parse(result.content[0].text).success, true)
+    const requests = [], callTool = bridge.client.callTool
+    try {
+      bridge.client.callTool = async request => { requests.push(request); return result }
+      const payment = registered.get('mcp__waimai__pay_order')
+      const sessionId = 'session-22222222-2222-4222-8222-222222222222'
+      const exec = { agent: { id: sessionId }, signal: new AbortController().signal }
+      await payment.execute({}, exec)
+      assert.deepEqual(requests[0], { name: 'pay_order', arguments: {}, _meta: { 'dsh/sessionId': sessionId } })
+      await payment.execute({}, { signal: exec.signal })
+      assert.equal(Object.hasOwn(requests[1], '_meta'), false)
+      await tool.execute({}, exec)
+      assert.equal(Object.hasOwn(requests[2], '_meta'), false)
+    } finally { bridge.client.callTool = callTool }
     const restart = bridge.restart({ DRY_RUN: 'false' })
     const afterSave = await bridge.call('get_status', {})
     await restart

@@ -8,7 +8,7 @@ const ref = '11111111-1111-4111-8111-111111111111', address = 'a'.repeat(64), re
 function tools(dispatch) {
   const registrations = new Map()
   registerAgentOrdering((name, description, schema, run) => registrations.set(name, { description, schema: z.object(schema).strict(), run }), { dispatch })
-  return async (name, args) => { const tool = registrations.get(name); return tool.run(tool.schema.parse(args)) }
+  return async (name, args, extra) => { const tool = registrations.get(name); return tool.run(tool.schema.parse(args), extra) }
 }
 const cart = { platformId: 'taobao', accountId: 'private-account', addressRef: address, shopId: 'store-17', revision, items: [], quantity: 1 }
 const quote = { ...cart, address: { address: 'private address' }, quoteRef: '22222222-2222-4222-8222-222222222222', merchant: '示例店', totalCents: 2100, maxOrderCents: 3500 }
@@ -75,6 +75,24 @@ test('agent payment requires a prepared reference and explicit final amount; ret
   assert.equal(paid.attempts[0].paymentStatus, 'requires-verification'); assert(!JSON.stringify(paid).includes('secret'))
   await call('get_payment_status', { accountRef: ref, orderRef: ref })
   assert.deepEqual(calls.map(c => c.method), ['paymentPrepare', 'paymentSubmit', 'paymentStatus'])
+})
+
+test('payment session identity comes only from Host metadata and stays out of model results', async () => {
+  const calls = [], call = tools(async (method, args) => { calls.push({ method, args }); return { orderRef: ref, paymentStatus: 'unknown' } })
+  const args = { accountRef: ref, orderRef: ref, paymentRef: ref, confirmed: true, confirmedCents: 300, maxAmountCents: 500 }
+  const sessionId = 'session-22222222-2222-4222-8222-222222222222'
+  const extra = { _meta: { 'dsh/sessionId': sessionId } }
+  const result = await call('pay_order', args, extra)
+  assert.equal(calls[0].args.paymentSessionId, sessionId)
+  assert(!JSON.stringify(result).includes(sessionId))
+  await assert.rejects(call('pay_order', { ...args, paymentSessionId: sessionId }, extra))
+  await assert.rejects(call('pay_order', { ...args, sessionId }, extra))
+  await call('pay_order', args)
+  assert.equal(calls[1].args.paymentSessionId, undefined)
+  await call('pay_order', args, { _meta: { 'dsh/sessionId': { forged: true } } })
+  assert.equal(calls[2].args.paymentSessionId, undefined)
+  await call('get_payment_status', { accountRef: ref, orderRef: ref }, extra)
+  assert.equal(Object.hasOwn(calls[3].args, 'paymentSessionId'), false)
 })
 
 test('unknown order creation remains queryable without invoking payment or claiming absence', async () => {

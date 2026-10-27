@@ -1,4 +1,5 @@
 import { test } from 'node:test'
+import { paymentSessionUuid } from '../lib/alipay-agent.js'
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -52,6 +53,99 @@ test('cashier quote validates final cents and projects no private provider param
     q => q.payToolPayVOList = '[]']) { const q = quote(); change(q); assert.throws(() => cashierQuote(envelope(q), 300)) }
   assert.throws(() => cashierResult({ succeeded: false, result: '[{}]' }))
   assert.throws(() => cashierResult({ succeeded: true, result: '[{},{}]' }))
+})
+
+test('official Agent Pay uses Host identity and keeps verification material out of model results and logs', async () => {
+  const f = await fixture(), calls = []
+  const sessionId = 'session-008283f7-fee1-4219-be64-06cf151e20b3'
+  const queryRef = '20260617008282174448790088372682'
+  const shortUrl = 'https://u.alipay.com/synthetic-private-verification'
+  f.control.submit.targetUrl = 'https://excashier.alipay.com/?signed=synthetic-private-material'
+  f.control.submit.extraMap = { cashierOrderNo: 'V2_synthetic' }
+  f.cashier.agentPayments = {
+    prepare: async id => paymentSessionUuid(id),
+    submit: async args => {
+      calls.push(args)
+      assert.equal((await f.cashier.ledger()).attempts[0].state, 'unknown')
+      return { completed: true, receipt: { code: 200, shortUrl, outShakeNo: queryRef } }
+    },
+    query: async ref => { assert.equal(ref, queryRef); return { completed: true, receipt: { code: 200, message: '支付成功' } } },
+  }
+  try {
+    const prepared = await f.cashier.prepare({ orderRef })
+    const args = { orderRef, paymentRef: prepared.paymentRef, confirmed: true, confirmedCents: 300, maxAmountCents: 1000, paymentSessionId: sessionId }
+    const result = await f.cashier.submit(args)
+    assert.equal(result.paymentStatus, 'requires-verification')
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].paymentLink, f.control.submit.targetUrl)
+    assert.equal(calls[0].sessionId, sessionId.slice(8))
+    assert.equal((await f.cashier.history([f.order])).get(orderRef).paymentUrl, shortUrl)
+    assert.equal((await f.cashier.providerReceipt({ orderRef })).submit.receipt.outShakeNo, queryRef)
+    for (const privateValue of [shortUrl, queryRef, 'synthetic-private-material', sessionId.slice(8)]) {
+      assert(!JSON.stringify({ result, logs: f.logs }).includes(privateValue))
+    }
+    await assert.rejects(f.cashier.submit(args))
+    assert.equal(calls.length, 1)
+    assert.equal((await f.cashier.status({ orderRef })).paymentStatus, 'requires-verification')
+    f.control.query = { value: { batchStatus: 'S' } }
+    assert.equal((await f.cashier.status({ orderRef })).paymentStatus, 'paid')
+  } finally { await f.dispose() }
+})
+
+test('missing Host identity stops configured Agent Pay before creating any payment attempt', async () => {
+  const f = await fixture()
+  f.cashier.agentPayments = { prepare: async id => paymentSessionUuid(id), submit: async () => assert.fail('must not submit') }
+  try {
+    const prepared = await f.cashier.prepare({ orderRef })
+    await assert.rejects(f.pay(prepared), { code: 'payment-session-missing' })
+    assert.equal(f.calls.filter(call => call.api === 'submit').length, 0)
+    assert.deepEqual((await f.cashier.ledger()).attempts, [])
+  } finally { await f.dispose() }
+})
+
+test('an Alipay query failure does not prevent reconciliation through the original cashier', async () => {
+  const f = await fixture(), shortUrl = 'https://u.alipay.com/synthetic-current'
+  f.control.submit.extraMap = { cashierOrderNo: 'V2_synthetic' }
+  f.cashier.agentPayments = { prepare: async () => '008283f7-fee1-4219-be64-06cf151e20b3',
+    submit: async () => ({ completed: true, receipt: { code: 200, shortUrl } }),
+    queryLink: async link => { assert.equal(link, shortUrl); throw new Error('private-provider-error') } }
+  try {
+    await f.pay(await f.cashier.prepare({ orderRef }))
+    f.control.query = { value: { batchStatus: 'S' } }
+    assert.equal((await f.cashier.status({ orderRef })).paymentStatus, 'paid')
+    assert(!JSON.stringify(f.logs).includes('private-provider-error'))
+    assert.equal(f.calls.filter(call => call.api === 'submit').length, 1)
+  } finally { await f.dispose() }
+})
+
+test('CLI transport success without a supported receipt remains unknown and cannot fall back to another payment', async () => {
+  const f = await fixture()
+  f.cashier.agentPayments = { prepare: async () => '008283f7-fee1-4219-be64-06cf151e20b3',
+    submit: async () => ({ completed: true, receipt: { code: 200, message: '支付成功' } }) }
+  try {
+    const result = await f.pay(await f.cashier.prepare({ orderRef }))
+    assert.equal(result.paymentStatus, 'unknown')
+    assert.equal((await f.cashier.history([f.order])).get(orderRef).paymentUrl, null)
+    await assert.rejects(f.cashier.prepare({ orderRef }), { code: 'payment-already-attempted' })
+  } finally { await f.dispose() }
+})
+
+test('a provider query reference survives restart without persisting URLs or issuing another submit', async () => {
+  const f = await fixture(), queryRef = '20260617008282174448790088372682', queries = []
+  f.cashier.agentPayments = { prepare: async () => '008283f7-fee1-4219-be64-06cf151e20b3',
+    submit: async () => ({ completed: true, receipt: { code: 200, outShakeNo: queryRef } }) }
+  try {
+    await f.pay(await f.cashier.prepare({ orderRef }))
+    const restarted = new TaobaoCashier(f.trade)
+    restarted.agentPayments = { query: async ref => { queries.push(ref); return { completed: true, receipt: { code: 200 } } } }
+    const result = await restarted.status({ orderRef })
+    assert.equal(result.paymentStatus, 'unknown')
+    assert.equal(result.paymentQueryAvailable, true)
+    assert.deepEqual(queries, [queryRef])
+    assert.equal(f.calls.filter(call => call.api === 'submit').length, 1)
+    assert(!String(await readFile(restarted.path)).includes('https:'))
+    await assert.rejects(restarted.prepare({ orderRef }), { code: 'payment-already-attempted' })
+  } finally { await f.dispose() }
 })
 
 test('cashier browser parameters require a single official checkout reference', () => {
@@ -173,7 +267,8 @@ test('malformed verification links remain unknown instead of presenting an unusa
     assert.equal((await f.cashier.history([f.order])).get(orderRef).paymentHandoffAvailable, false)
     assert.deepEqual(f.logs.find(value => value.stage === 'payment-response'), { group: 'waimai-order', attemptId: (await f.cashier.ledger()).attempts[0].ref,
       stage: 'payment-response', payResult: 'UNKNOWN', payAction: 'H5_URL', handoffAccepted: false,
-      handoffRejected: true, handoffReason: 'unapproved-destination', destinationReason: 'unrecognized-host' })
+      handoffRejected: true, handoffReason: 'unapproved-destination', destinationReason: 'unrecognized-host',
+      destinationProtocol: 'https', destinationHostname: 'attacker.test' })
   } finally { await f.dispose() }
 })
 
@@ -242,7 +337,7 @@ test('retail payment preparation supplies the official browser context without i
   } finally { await f.dispose() }
 })
 
-test('payment diagnostics contain only fixed action and handoff classifications', () => {
+test('payment diagnostics omit credentials, paths and parameters while identifying the destination host', () => {
   const cases = [
     [{ payResult: 'UNKNOWN', payAction: 'NEED_QUERY', extraMap: { privateToken: 'secret' } }, 'query-only'],
     [{ payResult: 'UNKNOWN', payAction: 'H5_URL', targetUrl: 'https://mclient.alipay.com/?secret=private' }, 'browser-url'],
@@ -256,8 +351,13 @@ test('payment diagnostics contain only fixed action and handoff classifications'
   for (const [result, reason] of cases) {
     const diagnostic = paymentResponseDiagnostic(result)
     assert.equal(diagnostic.handoffReason, reason)
-    for (const privateValue of ['private', 'secret', 'https:', 'attacker']) assert(!JSON.stringify(diagnostic).includes(privateValue))
+    for (const privateValue of ['private', 'secret', 'https:']) assert(!JSON.stringify(diagnostic).includes(privateValue))
   }
+  const diagnostic = paymentResponseDiagnostic({ payResult: 'UNKNOWN', payAction: 'H5_URL', targetUrl: 'https://checkout.example.test/private-path?token=secret#private-fragment' })
+  assert.equal(diagnostic.destinationHostname, 'checkout.example.test')
+  assert.equal(diagnostic.destinationProtocol, 'https')
+  for (const privateValue of ['private', 'secret', 'token', 'fragment']) assert(!JSON.stringify(diagnostic).includes(privateValue))
+  assert.equal(paymentResponseDiagnostic({ payResult: 'UNKNOWN', payAction: 'H5_URL', targetUrl: 'https://secret:private@checkout.example.test/' }).destinationHostname, null)
 })
 
 test('official WAP gateways preserve signed parameters and reject unrelated paths and destinations', async () => {
@@ -290,7 +390,7 @@ test('official WAP gateways preserve signed parameters and reject unrelated path
     const diagnostic = paymentResponseDiagnostic({ payResult: 'UNKNOWN', payAction: 'H5_URL', targetUrl: target })
     assert.equal(diagnostic.destinationReason, reason)
     assert.equal(diagnostic.handoffAccepted, false)
-    for (const secret of ['private', 'attacker', 'https:', 'u:p']) assert(!JSON.stringify(diagnostic).includes(secret))
+    for (const secret of ['private', 'https:', 'u:p']) assert(!JSON.stringify(diagnostic).includes(secret))
   }
   const signed = 'https://openapi.alipay.com/gateway.do?sign=synthetic%2bvalue+%20&part=1&part=2'
   assert.equal(providerPaymentUrl(signed), signed)

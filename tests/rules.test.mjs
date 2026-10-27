@@ -184,6 +184,22 @@ test('childEnv carries the narrowed limits to the server', () => {
   assert.deepEqual(JSON.parse(taskEnv.MERCHANT_WHITELIST), ['Task'])
 })
 
+test('Alipay Agent Pay configuration is optional and reaches every child with bounded timeout', async () => {
+  const { Config } = await import('../lib/index.js')
+  const defaults = Config({}).get()
+  assert.equal(defaults.alipayAgentExecutable, '')
+  assert.equal(defaults.alipayAgentTimeoutMs, 30000)
+  assert.equal(childEnv(defaults).ALIPAY_AGENT_EXECUTABLE, '')
+  assert.equal(childEnv(defaults).ALIPAY_AGENT_TIMEOUT_MS, '30000')
+  const configured = Config({ alipayAgentExecutable: 'C:/synthetic-tools/alipay-bot.exe', alipayAgentTimeoutMs: 45000 }).get()
+  for (const task of [undefined, { paymentMode: 'manual', alipayAgentExecutable: 'untrusted-task-path' }]) {
+    const env = childEnv(configured, task)
+    assert.equal(env.ALIPAY_AGENT_EXECUTABLE, configured.alipayAgentExecutable)
+    assert.equal(env.ALIPAY_AGENT_TIMEOUT_MS, '45000')
+  }
+  for (const alipayAgentTimeoutMs of [999, 120001]) assert.throws(() => Config({ alipayAgentTimeoutMs }))
+})
+
 test('skill frontmatter parses the packaged files', async () => {
   const raw = [
     '---',

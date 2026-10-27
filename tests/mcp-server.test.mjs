@@ -44,6 +44,7 @@ const EXPECTED_TOOLS = [
   'account_submit',
   'account_trade_history',
   'account_payment_status',
+  'account_payment_provider_receipt',
   'account_list',
   'account_begin',
   'account_cancel',
@@ -110,6 +111,12 @@ test('the server advertises every takeaway tool', async () => {
     const delivery = tools.find(tool => tool.name === 'account_select_delivery')
     assert.equal(delivery.inputSchema.properties.platformId.const, 'hema')
     assert.deepEqual(delivery.inputSchema.required, ['platformId', 'accountRef', 'quoteRef', 'deliveryRef'])
+    const payment = tools.find(tool => tool.name === 'pay_order')
+    assert.equal(Object.hasOwn(payment.inputSchema.properties, 'sessionId'), false)
+    assert.equal(Object.hasOwn(payment.inputSchema.properties, 'paymentSessionId'), false)
+    const receipt = tools.find(tool => tool.name === 'account_payment_provider_receipt')
+    assert.deepEqual(receipt.inputSchema.required, ['platformId', 'accountRef', 'orderRef'])
+    assert.equal(receipt.inputSchema.properties.platformId.const, 'taobao')
   } finally {
     await close()
   }

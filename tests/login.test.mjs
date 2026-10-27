@@ -289,5 +289,15 @@ test('login HTTP channel authorizes, validates RPC envelopes and excludes secret
     assert.equal(called, 8)
     assert.equal((await (await call('submit', { ...retry, platformId: 'taobao' })).json()).result.ok, true)
     assert.equal(called, 9)
+    const receipt = { platformId: 'taobao', accountRef: owner.accountRef, orderRef: change.operationRef }
+    assert.equal((await call('paymentProviderReceipt', receipt, { headers: { authorization: '' } })).status, 401)
+    for (const invalid of [{ ...receipt, accountRef: undefined }, { ...receipt, platformId: 'hema' }, { ...receipt, paymentUrl: 'https://evil.example' }]) {
+      assert.equal((await (await call('paymentProviderReceipt', invalid)).json()).result.ok, false)
+    }
+    assert.equal(called, 9)
+    const receiptResponse = await call('paymentProviderReceipt', receipt)
+    assert.equal(receiptResponse.headers.get('cache-control'), 'no-store')
+    assert.equal((await receiptResponse.json()).result.ok, true)
+    assert.equal(called, 10)
   } finally { server.closeAllConnections(); await new Promise(resolve=>server.close(resolve)) }
 })

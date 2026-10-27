@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.19
+
+- Add an opt-in official Alipay Agent Pay process adapter with Host-owned session identity, private receipts and one durable attempt per order.
+- Preserve provider query order numbers across restart; CLI transport success does not establish payment success. New optional ledger fields require restoring a pre-upgrade backup before downgrade.
+- Keep provider links out of model results and ordinary logs; destination diagnostics expose only protocol and hostname.
+
 ## 0.8.18
 
 - Reject non-string payment targets and raw whitespace or control characters; pass accepted signed destinations through without URL serialization.
