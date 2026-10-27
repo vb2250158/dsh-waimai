@@ -1,5 +1,7 @@
 # dsh-waimai
 
+The adapter also parses CLI error receipts with `schemaVersion: 1.0`. `PAYMENT_LINK_UNSUPPORTED` appears on the conversation payment card without settling the official payment status or retrying. The current CLI/service has rejected a `maliprod.alipay.com` entry returned by Taobao in live testing; a saved configuration or successful connection check does not establish automatic payment support for these orders.
+
 When the payment CLI returns no parseable JSON, raw stdout and stderr remain in memory behind authenticated private diagnostics, outside model tool results, persistent files and ordinary logs. Logs retain only execution classification, exit code and output byte counts. Timeout, spawn failure and nonzero exit do not establish payment status or authorize a retry.
 
 Open Plugins → Takeaway assistant → Payment settings to configure the final per-order cap, daily budget, payment mode, quote lifetime and Alipay connection. Check connection runs only `--version` at the saved executable path; it does not query a wallet or submit payment. Save edits before checking. An available executable does not establish wallet authorization or payment success. Merchant whitelists have been removed; see the [0.8.20 upgrade guide](MIGRATION-0.8.20.md).

@@ -161,6 +161,24 @@ test('unstructured process failures stay private while logs retain execution dia
   } finally { await f.dispose() }
 })
 
+test('unsupported cashier links report the provider rejection without settling or retrying payment', async () => {
+  const f = await fixture()
+  f.cashier.agentPayments = { prepare: async () => '008283f7-fee1-4219-be64-06cf151e20b3',
+    submit: async () => ({ completed: false, receipt: { command: 'submit-payment', schemaVersion: '1.0',
+      success: false, errorCode: 'PAYMENT_LINK_UNSUPPORTED', errorMsg: 'private provider details' } }) }
+  try {
+    const result = await f.pay(await f.cashier.prepare({ orderRef }))
+    assert.equal(result.paymentStatus, 'unknown')
+    assert.equal(result.providerErrorCode, 'PAYMENT_LINK_UNSUPPORTED')
+    const status = await f.cashier.status({ orderRef })
+    assert.equal(status.providerErrorCode, 'PAYMENT_LINK_UNSUPPORTED')
+    assert.equal(status.paymentStatus, 'unknown')
+    assert(!JSON.stringify({result,status,logs:f.logs}).includes('private provider details'))
+    await assert.rejects(f.cashier.prepare({ orderRef }), { code: 'payment-already-attempted' })
+    assert.equal(f.calls.filter(call => call.api === 'submit').length, 1)
+  } finally { await f.dispose() }
+})
+
 test('a provider query reference survives restart without persisting URLs or issuing another submit', async () => {
   const f = await fixture(), queryRef = '20260617008282174448790088372682', queries = []
   f.cashier.agentPayments = { prepare: async () => '008283f7-fee1-4219-be64-06cf151e20b3',

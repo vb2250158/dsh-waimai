@@ -71,6 +71,9 @@ test('private process reads only the terminal command result after diagnostic ou
   assert.deepEqual(alipayAgentReferences(response.receipt), { paymentUrl: null, queryRef })
   const cliResult = { entry: 'submit-payment', errorCode: 'INVALID_PARAMETER', errorMessage: '参数异常', outShakeNo: 'invalid', status: 'UNKNOWN', success: false }
   assert.deepEqual((await run(JSON.stringify(cliResult, null, 2))).receipt, cliResult)
+  const rejected = { command: 'submit-payment', schemaVersion: '1.0', errorCode: 'PAYMENT_LINK_UNSUPPORTED', errorMsg: '不支持的支付链接', success: false }
+  assert.deepEqual((await run(JSON.stringify(rejected, null, 2))).receipt, rejected)
+  assert.deepEqual(alipayAgentReferences(rejected), { paymentUrl: null, queryRef: null })
   for (const stdout of [
     JSON.stringify(result) + '\ntruncated result',
     'INFO diagnostic ' + JSON.stringify(result),

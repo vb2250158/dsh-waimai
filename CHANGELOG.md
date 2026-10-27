@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.23
+
+- Parse versioned CLI error results and show unsupported cashier links on payment cards without inferring payment status or retrying.
+
 ## 0.8.22
 
 - Retain non-JSON payment CLI output in authenticated transient diagnostics and log credential-free execution classifications instead of discarding process failures.

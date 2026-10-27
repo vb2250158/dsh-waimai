@@ -225,13 +225,13 @@ test('payment cards read official order states without requiring a delivery addr
 
 test('payment cards hide generic cashier links for unresolved attempts and resume only the retained verification handoff', async () => {
   const accountRef = '11111111-1111-4111-8111-111111111111', views = []
-  for (const [state, retained] of [['unknown', false], ['paid', false], ['failed', false], ['requires-verification', false], ['requires-verification', true], ['unconfirmed', false]]) {
+  for (const [state, retained, providerErrorCode] of [['unknown', false], ['paid', false], ['failed', false], ['requires-verification', false], ['requires-verification', true], ['unconfirmed', false], ['unknown', false, 'PAYMENT_LINK_UNSUPPORTED'], ['paid', false, 'PAYMENT_LINK_UNSUPPORTED']]) {
     const calls = [], officialOrders = [{ id: '123', status: '等待支付' }]
     const mounted = await mount({ async call(_channel, method) {
       calls.push(method)
       if (method === 'profile') return ok(profile)
       if (method === 'orders') return ok({ accountId: profile.id, orders: officialOrders })
-      if (method === 'paymentStatus') return ok({ accountId: profile.id, orderRef: accountRef, paymentStatus: state, officialOrders })
+      if (method === 'paymentStatus') return ok({ accountId: profile.id, orderRef: accountRef, paymentStatus: state, officialOrders, ...(providerErrorCode ? { providerErrorCode } : {}) })
       throw Error('Unexpected request: ' + method)
     } }, {
       tool: { name: 'mcp__waimai__request_payment', props: { phase: 'result', sessionId: 'payment-session', callId: 'payment-call', block: { content: [{ type: 'text', text: JSON.stringify({ success: true,
@@ -241,7 +241,7 @@ test('payment cards hide generic cashier links for unresolved attempts and resum
         paymentUrl: retained ? 'https://mclient.alipay.com/cashier?synthetic=1' : 'https://tb.ele.me/app/eleme-newretail-c-h5/order-detail-unicorn/order-detail?opType=pay&isAuto=1' }] }) },
     })
     try {
-      views.push({ state, retained, links: mounted.renderer.root.findAllByType('a').length,
+      views.push({ state, retained, ...(providerErrorCode ? { providerErrorCode } : {}), links: mounted.renderer.root.findAllByType('a').length,
         notices: mounted.renderer.root.findAllByProps({ role: 'status' }).map(node => text(node.props.children)) })
       if (state !== 'unconfirmed') assert(!text(mounted.renderer.toJSON()).includes('请在官方客户端的订单中继续'))
       assert(!calls.some(method => ['paymentSubmit', 'submit', 'paymentPrepare'].includes(method)))
