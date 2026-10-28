@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.29
+
+- Expose authenticated retail search, cart, checkout and payment RPCs through the existing Agent tool handlers, allowing command-line operation without model availability. Preserve Host-only credential injection, spending limits and unknown-outcome handling.
+
 ## 0.8.28
 
 - Resume verified H5 login, password and pre-confirmation pages with the provider's refresh action instead of restarting cashier initialization; unsupported pages stop without sending a request.
