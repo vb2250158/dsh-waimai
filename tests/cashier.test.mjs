@@ -44,6 +44,16 @@ async function fixture() {
   return { cashier, trade, order, control, calls, logs, pay, dispose: () => rm(directory, { recursive: true, force: true }) }
 }
 
+test('a saved password cannot initiate a CLI payment without an existing H5 session', async () => {
+  const f = await fixture()
+  try {
+    f.cashier.agentPayments = { submit: async () => assert.fail('must not fall back to CLI') }
+    await assert.rejects(f.cashier.h5Pay({ orderRef, paymentRef: orderRef, password: '000000',
+      confirmed: true, confirmedCents: 300, maxAmountCents: 1000 }), { code: 'payment-expired' })
+    assert.equal(f.calls.length, 0)
+  } finally { await f.dispose() }
+})
+
 test('private H5 continuation uses the original order and reserves before one backend payment', async () => {
   const f = await fixture(), httpCalls = []
   f.control.submit.targetUrl = 'https://maliprod.alipay.com/h5pay/index.html?contextId=synthetic-private-context'

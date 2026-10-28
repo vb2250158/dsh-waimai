@@ -1,6 +1,6 @@
 {
   "name": "dsh-waimai",
-  "version": "0.8.26",
+  "version": "0.8.27",
   "description": "Browse Taobao Instant Commerce and Hema addresses, menus and orders, confirm cart quotes and open official payment pages.",
   "type": "module",
   "main": "lib/index.js",
@@ -28,7 +28,8 @@
     "MIGRATION-0.5.0.md",
     "MIGRATION-0.8.20.md",
     "MIGRATION-0.8.21.md",
-    "MIGRATION-0.8.26.md"
+    "MIGRATION-0.8.26.md",
+    "MIGRATION-0.8.27.md"
   ],
   "dsh": {
     "bundle": {
@@ -40,7 +41,7 @@
   },
   "scripts": {
     "test": "node --test \"tests/*.test.mjs\"",
-    "check": "node --check lib/index.js && node --check lib/mcp-server.js && node --check lib/mcp-bridge.js && node --check lib/automation.js && node --check lib/payments.js && node --check lib/env.js && node --check lib/paths.js && node --check lib/login.js && node --check lib/taobao-qr.js && node --check lib/taobao-ucc.js && node --check lib/login-rpc.js && node --check lib/account-data.js && node --check lib/account-pool.js && node --check lib/address-data.js && node --check lib/browse-data.js && node --check lib/platform-service.js && node --check lib/client/index.js && node --check lib/hema-data.js && node --check lib/hema-login.js && node --check lib/hema-service.js && node --check lib/trade-data.js && node --check lib/taobao-trade.js && node --check lib/item-options.js && node --check lib/login-diagnostics.js && node --check lib/agent-ordering.js && node --check lib/agent-browse.js && node --check lib/image-data.js && node --check lib/login-http.js && node --check lib/taobao-sms.js && node --check lib/retail-trade.js && node --check lib/cashier.js && node --check lib/alipay-agent.js && node --check lib/alipay-h5.js && node --check lib/alipay-h5-input.js && node --check lib/alipay-h5-browser.js"
+    "check": "node --check lib/index.js && node --check lib/mcp-server.js && node --check lib/mcp-bridge.js && node --check lib/automation.js && node --check lib/payments.js && node --check lib/env.js && node --check lib/paths.js && node --check lib/login.js && node --check lib/taobao-qr.js && node --check lib/taobao-ucc.js && node --check lib/login-rpc.js && node --check lib/account-data.js && node --check lib/account-pool.js && node --check lib/address-data.js && node --check lib/browse-data.js && node --check lib/platform-service.js && node --check lib/client/index.js && node --check lib/hema-data.js && node --check lib/hema-login.js && node --check lib/hema-service.js && node --check lib/trade-data.js && node --check lib/taobao-trade.js && node --check lib/item-options.js && node --check lib/login-diagnostics.js && node --check lib/agent-ordering.js && node --check lib/agent-browse.js && node --check lib/image-data.js && node --check lib/login-http.js && node --check lib/taobao-sms.js && node --check lib/retail-trade.js && node --check lib/cashier.js && node --check lib/alipay-agent.js && node --check lib/alipay-h5.js && node --check lib/alipay-h5-input.js && node --check lib/alipay-h5-browser.js && node --check lib/payment-credentials.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.27
+
+- Add account-bound Alipay password management in payment settings through the DSH credentials service, with presence-only status and independent save/remove controls.
+- Resolve saved credentials privately for H5 payment without model-visible passwords, MCP restarts or fallback to another payment provider. Login verification and real-payment acceptance remain separate.
+
 ## 0.8.26
 
 - Add a private H5 backend transport with original-order handoff resolution, cookie-jar ownership, server continuation parameters and ephemeral password encoding.

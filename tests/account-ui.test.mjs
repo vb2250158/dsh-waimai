@@ -1344,3 +1344,99 @@ test('H5 card connects private verification, clears the payment password and rec
     assert(text(mounted.renderer.toJSON()).includes('付款已确认'))
   } finally { mounted.close() }
 })
+
+test('payment settings store a six-digit password only through private account RPC and clear the input before dispatch completes', async () => {
+  const first = '11111111-1111-4111-8111-111111111111', second = '22222222-2222-4222-8222-222222222222'
+  const calls = [], saved = deferred(), storage = [], mutations = []; let configured = false
+  const mounted = await mount({ async call(channel, method, payload) {
+    calls.push({ channel, method, payload: structuredClone(payload) })
+    if (method === 'accountsList') return ok({ viewAccountRef: first, accounts: [{ ref: first, nickname: '第一账号' }, { ref: second, nickname: '第二账号' }] })
+    if (method === 'paymentCredential') {
+      if (payload.operation === 'save') { configured = true; return saved.promise }
+      if (payload.operation === 'remove') configured = false
+      return ok({ configured, writable: true })
+    }
+    return method === 'profile' ? ok(profile) : ok({ authenticated: true, state: 'logged-in' })
+  } }, { mutate: async ops => { mutations.push(structuredClone(ops)); return true },
+    storage: { getItem: () => null, setItem: (...args) => storage.push(args) } })
+  try {
+    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
+    await act(async () => button('支付配置').props.onClick())
+    const input = () => root.findAll(node => node.type === 'span' && node.props['aria-label'] === '六位支付宝支付密码')[0]
+    assert.equal(input().props.autoComplete, 'new-password'); assert.equal(input().props.type, 'password')
+    assert(text(mounted.renderer.toJSON()).includes('尚未设置支付密码'))
+    await act(async () => input().props.onChange({ target: { value: '12345' } }))
+    assert.equal(button('保存支付密码').props.disabled, true)
+    await act(async () => input().props.onChange({ target: { value: '654321' } }))
+    await act(async () => { button('保存支付密码').props.onClick(); button('保存支付密码').props.onClick() })
+    assert.equal(input().props.value, ''); assert.equal(button('保存支付密码').props.disabled, true)
+    assert.equal(calls.filter(x => x.method === 'paymentCredential' && x.payload.operation === 'save').length, 1)
+    await act(async () => saved.resolve(ok({ configured: true, writable: true })))
+    assert(text(mounted.renderer.toJSON()).includes('支付密码已设置'))
+    assert.equal(input().props.value, '')
+    await act(async () => root.findByType('form').props.onSubmit({ preventDefault() {} }))
+    assert(!JSON.stringify(mutations).includes('654321')); assert(!JSON.stringify(storage).includes('654321'))
+    assert(!text(mounted.renderer.toJSON()).includes('654321'))
+    assert(root.findAll(node => node.type === 'span' && node.props.type === 'password').every(node => node.props.value === ''))
+    const credentialCalls = calls.filter(x => x.method === 'paymentCredential')
+    assert(credentialCalls.every(x => x.channel === '/waimai-login' && x.payload.platformId === 'taobao' && x.payload.accountRef === first))
+    assert.equal(credentialCalls.find(x => x.payload.operation === 'save').payload.password, '654321')
+    await act(async () => button('删除已保存的密码').props.onClick())
+    assert(text(mounted.renderer.toJSON()).includes('尚未设置支付密码'))
+    assert.equal(calls.filter(x => x.method === 'paymentCredential' && x.payload.operation === 'remove').at(-1).payload.password, undefined)
+  } finally { mounted.close() }
+})
+
+test('changing payment credential accounts clears input and ignores stale status, while a failed status never claims unset', async () => {
+  const first = '11111111-1111-4111-8111-111111111111', second = '22222222-2222-4222-8222-222222222222', stale = deferred()
+  let reads = 0, fail = false
+  const mounted = await mount({ async call(_channel, method, payload) {
+    if (method === 'accountsList') return ok({ viewAccountRef: first, accounts: [{ ref: first, nickname: '第一账号' }, { ref: second, nickname: '第二账号' }] })
+    if (method === 'paymentCredential') {
+      if (fail) throw Error('synthetic-private-value')
+      if (payload.accountRef === first && ++reads > 1) return stale.promise
+      return ok({ configured: payload.accountRef === first, writable: true })
+    }
+    return method === 'profile' ? ok(profile) : ok({ authenticated: true, state: 'logged-in' })
+  } })
+  try {
+    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
+    await act(async () => button('支付配置').props.onClick())
+    const input = () => root.findAll(node => node.type === 'span' && node.props['aria-label'] === '六位支付宝支付密码')[0]
+    const choice = () => root.findAll(node => node.type === 'span' && node.props.className === 'waimai-choice' && node.props.selectedId === first)[0]
+    await act(async () => input().props.onChange({ target: { value: '654321' } }))
+    await act(async () => { button('刷新支付密码状态').props.onClick() })
+    assert.equal(input().props.value, '')
+    await act(async () => choice().props.onSelect(second))
+    assert(text(mounted.renderer.toJSON()).includes('尚未设置支付密码'))
+    await act(async () => stale.resolve(ok({ configured: true, writable: true })))
+    assert(!text(mounted.renderer.toJSON()).includes('支付密码已设置'))
+    fail = true
+    await act(async () => button('刷新支付密码状态').props.onClick())
+    assert(!text(mounted.renderer.toJSON()).includes('尚未设置支付密码'))
+    assert(text(mounted.renderer.toJSON()).includes('无法读取或保存支付密码'))
+    assert(!text(mounted.renderer.toJSON()).includes('synthetic-private-value'))
+    assert.equal(button('保存支付密码').props.disabled, true)
+  } finally { mounted.close() }
+})
+
+test('leaving payment settings discards password input and a late save response cannot repopulate a remounted form', async () => {
+  const ref = '11111111-1111-4111-8111-111111111111', pending = deferred()
+  const mounted = await mount({ async call(_channel, method, payload) {
+    if (method === 'accountsList') return ok({ activeRef: ref, accounts: [{ ref, nickname: '示例账号' }] })
+    if (method === 'paymentCredential') return payload.operation === 'save' ? pending.promise : ok({ configured: false, writable: true })
+    return method === 'profile' ? ok(profile) : ok({ authenticated: true, state: 'logged-in' })
+  } })
+  try {
+    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
+    await act(async () => button('支付配置').props.onClick())
+    const input = () => root.findAll(node => node.type === 'span' && node.props['aria-label'] === '六位支付宝支付密码')[0]
+    await act(async () => input().props.onChange({ target: { value: '654321' } }))
+    await act(async () => button('保存支付密码').props.onClick())
+    await act(async () => button('点单设置').props.onClick())
+    await act(async () => pending.resolve(ok({ configured: true, writable: true })))
+    await act(async () => button('支付配置').props.onClick())
+    assert.equal(input().props.value, '')
+    assert(!text(mounted.renderer.toJSON()).includes('支付密码已保存'))
+  } finally { mounted.close() }
+})

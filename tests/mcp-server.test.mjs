@@ -79,6 +79,7 @@ const EXPECTED_TOOLS = [
   'confirm_order',
   'get_payment_options',
   'pay_order',
+  'account_payment_h5_pay',
   'get_payment_status',
 ]
 
