@@ -308,5 +308,20 @@ test('login HTTP channel authorizes, validates RPC envelopes and excludes secret
     assert.deepEqual(connection.result.value, { configured: false, available: false, version: null, reason: 'not-configured' })
     assert.equal(paymentChecks, 1)
     assert.equal(called, 10)
+    const h5 = { ...receipt, confirmed: true, confirmedCents: 4710, maxAmountCents: 5000,
+      cookies: [], environment: { device: { userAgent: 'synthetic-client' }, ua: 'x'.repeat(6000) } }
+    assert.equal((await call('paymentH5Start', h5, { headers: { authorization: '' } })).status, 401)
+    assert.equal((await (await call('paymentH5Start', { ...h5, url: 'https://attacker.test' })).json()).result.ok, false)
+    const unrelatedCookie = { name: 'cookie', value: 'private', domain: 'attacker.test', path: '/', expires: -1, secure: true, httpOnly: true, sameSite: 'Lax' }
+    assert.equal((await (await call('paymentH5Start', { ...h5, cookies: [unrelatedCookie] })).json()).result.ok, false)
+    assert.equal(called, 10)
+    const h5Started = await call('paymentH5Start', h5)
+    assert.equal(h5Started.headers.get('cache-control'), 'no-store')
+    assert.equal((await h5Started.json()).result.ok, true)
+    const h5Verify = { ...receipt, h5Ref: owner.accountRef, confirmed: true, confirmedCents: 4710, maxAmountCents: 5000,
+      password: 'synthetic-private-password', envData: 'x'.repeat(6000) }
+    assert.equal((await (await call('paymentH5Submit', { ...h5Verify, action: '/arbitrary' })).json()).result.ok, false)
+    assert.equal((await (await call('paymentH5Submit', h5Verify)).json()).result.ok, true)
+    assert.equal(called, 12)
   } finally { server.closeAllConnections(); await new Promise(resolve=>server.close(resolve)) }
 })

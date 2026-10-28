@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.26
+
+- Add a private H5 backend transport with original-order handoff resolution, cookie-jar ownership, server continuation parameters and ephemeral password encoding.
+- Route H5 initialization and one-time submission through authenticated, model-hidden endpoints and the existing payment ledger. Add an account-owned Alipay verification window and private payment-card controls. Live payment acceptance remains incomplete.
+
 ## 0.8.25
 
 - Preserve the official payment entrance during cashier consultation and submission.

@@ -44,6 +44,64 @@ async function fixture() {
   return { cashier, trade, order, control, calls, logs, pay, dispose: () => rm(directory, { recursive: true, force: true }) }
 }
 
+test('private H5 continuation uses the original order and reserves before one backend payment', async () => {
+  const f = await fixture(), httpCalls = []
+  f.control.submit.targetUrl = 'https://maliprod.alipay.com/h5pay/index.html?contextId=synthetic-private-context'
+  f.cashier.agentPayments = { prepare: async () => assert.fail('H5 must not invoke CLI'), submit: async () => assert.fail('H5 must not invoke CLI') }
+  f.trade.login.timeoutMs = 1000
+  let disposed = false
+  f.trade.login.createContext = async () => ({
+    async get(url, options) {
+      assert.equal(url, f.control.submit.targetUrl); assert.equal(options.maxRedirects, 0)
+      return { status: () => 200, ok: () => true, text: async () => '<html></html>', dispose: async () => {} }
+    },
+    async post(url, options) {
+      httpCalls.push({ url, options })
+      if (url.endsWith('cashierPay.json')) {
+        const record = (await f.cashier.ledger()).attempts[0]
+        assert.equal(record.h5Submitted, true); assert.equal(record.state, 'unknown')
+        return { ok: () => true, json: async () => ({ success: true, data: { controlType: 'pay_success' } }), dispose: async () => {} }
+      }
+      return { ok: () => true, json: async () => ({ success: true, data: { controlType: 'cashier_pre_confirm',
+        bizData: { orderAmount: '3.00', npwdPay: true } } }), dispose: async () => {} }
+    }, dispose: async () => { disposed = true },
+  })
+  const args = { orderRef, confirmed: true, confirmedCents: 300, maxAmountCents: 1000, cookies: [], environment: { device: { userAgent: 'synthetic' } } }
+  try {
+    const started = await f.cashier.h5Start(args)
+    assert.equal(started.state, 'ready')
+    f.cashier.h5Sessions.get(orderRef).envData = 'synthetic-private-environment'
+    const ready = await f.cashier.prepare({ orderRef })
+    assert.equal(ready.state, 'h5-ready')
+    const result = await f.pay(ready)
+    assert.equal(result.state, 'requires-reconciliation')
+    assert.equal(result.paymentStatus, 'unknown')
+    assert.equal(httpCalls[1].options.data.envData, 'synthetic-private-environment')
+    assert.equal((await f.cashier.ledger()).attempts[0].state, 'unknown')
+    await assert.rejects(f.cashier.h5Submit({ ...args, h5Ref: started.h5Ref }), { code: 'payment-already-attempted' })
+    await assert.rejects(f.cashier.h5Start(args), { code: 'h5-session-unavailable' })
+    assert.equal(f.calls.filter(call => call.api === 'submit').length, 1)
+    assert.equal(httpCalls.filter(call => call.url.endsWith('cashierPay.json')).length, 1)
+    assert.ok(!JSON.stringify({ started, result, logs: f.logs, ledger: await f.cashier.ledger() }).includes('synthetic-private'))
+    await f.cashier.close(); assert.equal(disposed, true)
+  } finally { await f.dispose() }
+})
+
+test('H5 rejects canceled orders, stale references and changed budgets before backend payment', async () => {
+  const f = await fixture()
+  const args = { orderRef, h5Ref: '11111111-1111-4111-8111-111111111111', confirmed: true, confirmedCents: 300, maxAmountCents: 1000 }
+  const client = { submit: async () => assert.fail('must not send payment') }
+  try {
+    await assert.rejects(f.cashier.h5Submit(args), { code: 'h5-session-expired' })
+    f.cashier.h5Sessions.set(orderRef, { ref: args.h5Ref, accountId: 'owner', client })
+    await assert.rejects(f.cashier.h5Submit({ ...args, confirmedCents: 301 }), { code: 'payment-amount-unconfirmed' })
+    await assert.rejects(f.cashier.h5Submit({ ...args, maxAmountCents: 299 }), { code: 'payment-amount-unconfirmed' })
+    f.control.status = '订单已取消'
+    await assert.rejects(f.cashier.h5Submit(args), { code: 'payment-not-pending' })
+    assert.equal(f.calls.filter(call => call.api === 'submit').length, 0)
+  } finally { await f.dispose() }
+})
+
 test('cashier quote validates final cents and projects no private provider parameters', () => {
   const result = cashierQuote(envelope(quote()), 300)
   assert.equal(result.display.amountCents, 300)
@@ -553,5 +611,41 @@ test('restart loses pending payment query parameters without interpreting order 
     assert.equal(f.calls.filter(call => call.api === 'status').length, 1)
     assert.equal(f.calls.filter(call => call.api === 'submit').length, 1)
     assert(!JSON.stringify(await f.cashier.ledger()).includes('private-query-reference'))
+  } finally { await f.dispose() }
+})
+
+
+test('H5 connects verified browser state only to its owned pending order and retains no public credentials', async () => {
+  const f = await fixture(), h5Ref = '22222222-2222-4222-8222-222222222222'
+  let oldClosed = 0, browserClosed = 0, newClosed = 0
+  const oldClient = { submitted: false, close: async () => { oldClosed++ } }
+  const snapshot = { entryUrl: 'https://maliprod.alipay.com/h5pay/cashierPreConfirm/index.html?contextId=synthetic-private',
+    storageState: { cookies: [], origins: [] }, environment: { device: { userAgent: 'verified-browser' } }, envData: 'synthetic-private-sdk' }
+  const current = { ref: h5Ref, accountId: 'owner', client: oldClient, verification: {
+    snapshot: async () => snapshot, close: async () => { browserClosed++ } } }
+  f.cashier.h5Sessions.set(orderRef, current)
+  f.trade.login.createContext = async options => {
+    assert.equal(options.userAgent, 'verified-browser')
+    return { post: async () => ({ ok: () => true, dispose: async () => {}, json: async () => ({ success: true,
+      data: { controlType: 'cashier_pre_confirm', bizData: { orderAmount: f.control.amount, npwdPay: true } } }) }),
+    storageState: async () => snapshot.storageState, dispose: async () => { newClosed++ } }
+  }
+  try {
+    await assert.rejects(f.cashier.h5Authenticate({ orderRef, h5Ref: orderRef, operation: 'connect' }), { code: 'h5-session-expired' })
+    const result = await f.cashier.h5Authenticate({ orderRef, h5Ref, operation: 'connect' })
+    assert.equal(result.state, 'ready'); assert.equal(oldClosed, 1); assert.equal(browserClosed, 1)
+    assert.equal(current.envData, 'synthetic-private-sdk')
+    assert(!JSON.stringify({ result, logs: f.logs }).includes('synthetic-private'))
+    assert.equal(f.calls.filter(call => call.api === 'submit').length, 0)
+    await f.cashier.close(); assert.equal(newClosed, 1); assert.equal(f.cashier.h5Authentication, null)
+  } finally { await f.dispose() }
+})
+
+test('H5 preview cannot create an intent or submit a payment', async () => {
+  const f = await fixture(); f.trade.dryRun = true
+  try {
+    await assert.rejects(f.cashier.h5Start({ orderRef }), { code: 'preview-only' })
+    assert.throws(() => f.cashier.h5Submit({ orderRef }), { code: 'preview-only' })
+    assert.equal(f.calls.length, 0)
   } finally { await f.dispose() }
 })

@@ -251,3 +251,11 @@ test('the provider returns nothing for a missing directory', async () => {
   const provider = createSkillProvider(join(PACKAGE_ROOT, 'does-not-exist'))
   assert.deepEqual(await provider.list(), [])
 })
+
+
+test('H5 browser choice is a validated payment setting passed to the private process', async () => {
+  const { Config } = await import('../lib/index.js')
+  const config = Config({ alipayH5BrowserChannel: 'msedge' }).get()
+  assert.equal(childEnv(config).ALIPAY_H5_BROWSER_CHANNEL, 'msedge')
+  assert.throws(() => Config({ alipayH5BrowserChannel: 'arbitrary-executable' }))
+})

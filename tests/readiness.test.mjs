@@ -117,6 +117,9 @@ test('the Host bridge executes advertised MCP tools and unregisters them on stop
     const tool = registered.get('mcp__waimai__get_status')
     for (const name of LOGIN_TOOLS) assert.equal(registered.has(`mcp__waimai__${name}`), false)
     assert.equal(registered.has('mcp__waimai__account_payment_provider_receipt'), false)
+    assert.equal(registered.has('mcp__waimai__account_payment_h5_start'), false)
+    assert.equal(registered.has('mcp__waimai__account_payment_h5_authenticate'), false)
+    assert.equal(registered.has('mcp__waimai__account_payment_h5_submit'), false)
     const result = await tool.execute({}, { signal: new AbortController().signal })
     assert.equal(JSON.parse(result.content[0].text).success, true)
     const requests = [], callTool = bridge.client.callTool

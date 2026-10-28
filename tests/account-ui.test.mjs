@@ -536,6 +536,7 @@ async function mount(rpc, options = {}) {
   runInNewContext(await readFile(new URL('../lib/client/index.js', import.meta.url), 'utf8'), {
     window: { localStorage, __ModuleLoader__: { load(entry) { module = entry.factory(name => name === 'react' ? React : primitives) } } },
     document: { createElement: () => ({ dataset: {}, remove() {} }), head: { appendChild() {} } },
+    navigator: { userAgent: 'synthetic-browser' },
     structuredClone, setInterval, clearInterval, setTimeout: options.setTimeout || setTimeout,
     clearTimeout: options.clearTimeout || clearTimeout, crypto: { randomUUID },
   })
@@ -1289,5 +1290,57 @@ test('the task view shows only its platform and edits preserve tasks belonging t
     assert.equal(operations[0].value[0].name, '其他平台任务')
     assert.equal(operations[0].value[1].name, '修改后的任务')
     assert(!text(mounted.renderer.toJSON()).includes('白名单'))
+  } finally { mounted.close() }
+})
+
+
+test('H5 card connects private verification, clears the payment password and reconciles without claiming success from H5', async () => {
+  const accountRef = '11111111-1111-4111-8111-111111111111', h5Ref = '22222222-2222-4222-8222-222222222222'
+  const calls = [], states = [], officialOrders = [{ id: '123', status: '待支付' }]
+  let paid = false, submits = 0
+  const mounted = await mount({ async call(_channel, method, payload) {
+    calls.push({ method, payload: structuredClone(payload) })
+    if (method === 'profile') return ok(profile)
+    if (method === 'orders') return ok({ accountId: profile.id, orders: officialOrders })
+    if (method === 'paymentStatus') return ok({ accountId: profile.id, paymentStatus: paid ? 'paid' : 'requires-verification',
+      orderRef: accountRef, officialOrders })
+    if (method === 'paymentH5Start') return ok({ h5Ref, state: 'requires-verification', submitted: false })
+    if (method === 'paymentH5Authenticate') return ok({ h5Ref, state: payload.operation === 'connect' ? 'ready' : 'verifying', submitted: false })
+    if (method === 'paymentH5Submit') {
+      submits++
+      if (!payload.password) return ok({ state: 'requires-password', submitted: false })
+      assert.equal(payload.password, 'synthetic-password')
+      return ok({ state: 'requires-reconciliation', submitted: true })
+    }
+    throw Error('Unexpected operation: ' + method)
+  } }, { tool: { name: 'mcp__waimai__request_payment', props: { phase: 'result', sessionId: 'h5-session', callId: 'h5-call',
+    block: { content: [{ type: 'text', text: JSON.stringify({ success: true, data: { view: 'payment', platformId: 'taobao', accountRef, attempts: [{ orderRef: accountRef }] } }) }] } } },
+    trade: async () => ok({ accountId: profile.id, attempts: [{ orderRef: accountRef, merchant: '示例店', amountCents: 2100,
+      status: 'created', orderIds: ['123'], paymentUrl: null, paymentStatus: 'requires-verification' }] }) })
+  try {
+    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
+    const labels = () => root.findAllByType('button').map(node => text(node.props.children)).filter(value => value.includes('H5') || value.includes('后台') || value.includes('支付宝登录'))
+    states.push(labels())
+    await act(async () => button('连接 H5 收银台').props.onClick())
+    await act(async () => button('打开支付宝登录验证').props.onClick())
+    states.push(labels())
+    await act(async () => button('已验证，连接后台').props.onClick())
+    states.push(labels())
+    await act(async () => button('确认后台付款 · ¥21.00').props.onClick())
+    const input = root.findAll(node => node.type === 'span' && node.props.type === 'password')[0]
+    act(() => input.props.onChange({ target: { value: 'synthetic-password' } }))
+    await act(async () => button('确认后台付款 · ¥21.00').props.onClick())
+    assert.equal(submits, 2)
+    assert(!text(mounted.renderer.toJSON()).includes('付款已确认'))
+    assert(!JSON.stringify(mounted.renderer.toJSON()).includes('synthetic-password'))
+    assert.equal(button('确认后台付款 · ¥21.00'), undefined)
+    assert(calls.every(call => call.payload.accountRef === accountRef))
+    const submitted = calls.filter(call => call.method === 'paymentH5Submit')
+    assert(submitted.every(call => call.payload.confirmedCents === 2100 && call.payload.maxAmountCents === 2100))
+    states.push(labels())
+    assert.deepEqual(states, JSON.parse(await readFile(new URL('./fixtures/h5-payment-view.json', import.meta.url), 'utf8')))
+    paid = true
+    await act(async () => button('核对官方订单状态').props.onClick())
+    assert(text(mounted.renderer.toJSON()).includes('付款已确认'))
   } finally { mounted.close() }
 })
