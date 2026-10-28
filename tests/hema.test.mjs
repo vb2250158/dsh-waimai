@@ -302,6 +302,7 @@ test('Hema address selection persists independently and products require a curre
 test('account pool chooses a Hema adapter, refuses unsupported SMS and foreign source references before accessing another jar', async () => {
   const f = await fixture(), pool = new AccountPool({ directory: f.directory, definitions: new PlatformService({ directory: f.directory }).list(),
     loginOptions: { persistLogin: true, createContext: f.createContext } })
+  let serviceCloses = 0
   try {
     await pool.init()
     await assert.rejects(pool.dispatch('qrStart', { platformId: 'hema', loginMethod: 'hema-qr' }), error => error.code === 'login-method-unavailable')
@@ -313,7 +314,7 @@ test('account pool chooses a Hema adapter, refuses unsupported SMS and foreign s
     const ref = '22222222-2222-4222-8222-222222222222'
     pool.index.platforms.taobao = { activeRef: ref, accounts: [{ ref, externalId: '77777', loginMethod: 'taobao-qr' }] }
     const source = { profile: async () => ({ id: '77777' }), exportTaobaoSession: async () => ({ accountId: '12345', businessAccountId: '77777', storageState }), close: async () => {} }
-    pool.sessions.set('taobao:' + ref, { ref, login: source })
+    pool.sessions.set('taobao:' + ref, { ref, login: source, service: { close: async () => { serviceCloses++ } } })
     await pool.save(pool.index)
     const beforeSource = structuredClone(pool.index.platforms.taobao)
     const status = await pool.dispatch('useTaobao', { platformId: 'hema', sourceAccountRef: ref })
@@ -326,4 +327,5 @@ test('account pool chooses a Hema adapter, refuses unsupported SMS and foreign s
     await assert.rejects(pool.dispatch('useTaobao', { platformId: 'hema', sourceAccountRef: ref }), /身份不一致/)
     assert.equal(await readFile(pool.indexPath, 'utf8'), index)
   } finally { await pool.close(); await f.close() }
+  assert.equal(serviceCloses, 1)
 })
