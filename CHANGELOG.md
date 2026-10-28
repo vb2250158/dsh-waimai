@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.30
+
+- Add account-scoped Alipay verification to payment settings, without exposing payment actions or allowing new cashier submissions. Keep password configuration separate from authentication and explain the pending-order requirement.
+- Recognize the official waiting-for-payment label and retain initialization errors instead of replacing them with a verification window.
+
 ## 0.8.29
 
 - Expose authenticated retail search, cart, checkout and payment RPCs through the existing Agent tool handlers, allowing command-line operation without model availability. Preserve Host-only credential injection, spending limits and unknown-outcome handling.

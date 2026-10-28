@@ -1476,3 +1476,88 @@ test('H5 reconciliation snapshots distinguish unsent, submitted and unknown outc
     } finally { mounted.close() }
   }
 })
+
+test('payment settings sign in to the selected pending order without creating orders or submitting payment', async () => {
+  const ref = '11111111-1111-4111-8111-111111111111', orderRef = '22222222-2222-4222-8222-222222222222', calls = [], states = []
+  const record = { orderRef, orderIds: ['123'], status: 'created', merchant: '验收商店', amountCents: 4690 }
+  const officialOrders = [{ id: '123', status: '等待支付' }]
+  const rpc = { async call(_channel, method, payload) {
+    calls.push({ method, payload })
+    if (method === 'accountsList') return ok({ viewAccountRef: ref, accounts: [{ ref, nickname: '验收账号' }] })
+    if (method === 'paymentCredential') return ok({ configured: true, writable: true })
+    if (method === 'tradeHistory') return ok({ accountId: profile.id, attempts: [record] })
+    if (method === 'orders') return ok({ accountId: profile.id, orders: officialOrders })
+    if (method === 'paymentStatus') return ok({ accountId: profile.id, orderRef, paymentStatus: 'requires-verification', officialOrders })
+    if (method === 'paymentH5Start') return ok({ h5Ref: ref, state: 'requires-verification', verificationRequired: true, submitted: false })
+    if (method === 'paymentH5Authenticate') return ok({ h5Ref: ref, state: payload.operation === 'connect' ? 'ready' : 'verifying', submitted: false })
+    return method === 'profile' ? ok(profile) : ok({ authenticated: true, state: 'logged-in' })
+  } }
+  const mounted = await mount(rpc, { trade: (method, payload) => rpc.call('/waimai-login', method, payload) })
+  try {
+    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
+    await act(async () => button('支付配置').props.onClick())
+    assert(text(mounted.renderer.toJSON()).includes('支付密码已设置'))
+    assert(text(mounted.renderer.toJSON()).includes('尚未检查支付宝验证入口'))
+    await act(async () => button('检查待付款订单').props.onClick())
+    states.push({ action: text(button('登录支付宝').props.children), amount: '¥46.90' })
+    await act(async () => button('登录支付宝').props.onClick())
+    assert.equal(calls.find(x => x.method === 'paymentH5Start').payload.verificationOnly, true)
+    assert.equal(calls.filter(x => x.method === 'paymentH5Authenticate' && x.payload.operation === 'open').length, 1)
+    await act(async () => button('已验证，连接后台').props.onClick())
+    assert(text(mounted.renderer.toJSON()).includes('此订单的支付宝登录验证已完成'))
+    assert(!root.findAllByType('button').some(node => /确认后台付款|使用已保存的支付密码/.test(text(node.props.children))))
+    assert(!calls.some(x => ['submit', 'paymentPay', 'paymentH5Submit'].includes(x.method)))
+    assert(calls.filter(x => ['tradeHistory', 'orders', 'paymentStatus', 'paymentH5Start', 'paymentH5Authenticate'].includes(x.method)).every(x => x.payload.accountRef === ref))
+    states.push({ verified: true, paymentButtons: 0, paymentCalls: 0 })
+    assert.deepEqual(states, JSON.parse(await readFile(new URL('./fixtures/settings-payment-login.json', import.meta.url), 'utf8')))
+  } finally { mounted.close() }
+})
+
+test('payment settings never offer cancelled, unknown or foreign orders as login sessions', async () => {
+  const ref = '11111111-1111-4111-8111-111111111111', records = [
+    { orderRef: 'cancelled', orderIds: ['1'], status: 'created' },
+    { orderRef: 'unknown', orderIds: ['2'], status: 'unknown' },
+    { orderRef: 'foreign', orderIds: ['3'], status: 'created' },
+  ]
+  const rpc = { async call(_channel, method) {
+    if (method === 'accountsList') return ok({ accounts: [{ ref, nickname: '验收账号' }] })
+    if (method === 'paymentCredential') return ok({ configured: true, writable: true })
+    if (method === 'tradeHistory') return ok({ accountId: profile.id, attempts: records })
+    if (method === 'orders') return ok({ accountId: profile.id, orders: [{ id: '1', status: '订单已取消' }, { id: '2', status: '待支付' }, { id: '3', status: '等待支付' }] })
+    if (method === 'paymentStatus') return ok({ accountId: 'foreign-owner', paymentStatus: 'requires-verification' })
+    return method === 'profile' ? ok(profile) : ok({ authenticated: true, state: 'logged-in' })
+  } }
+  const mounted = await mount(rpc, { trade: (method, payload) => rpc.call('/waimai-login', method, payload) })
+  try {
+    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
+    await act(async () => button('支付配置').props.onClick())
+    await act(async () => button('检查待付款订单').props.onClick())
+    assert.equal(button('登录支付宝'), undefined)
+    assert(root.findAllByProps({ role: 'alert' }).length > 0)
+    assert(!text(mounted.renderer.toJSON()).includes('没有可继续验证的待付款订单'))
+  } finally { mounted.close() }
+})
+
+test('settings login retains initialization errors instead of opening a window and hiding reconciliation', async () => {
+  const ref = '11111111-1111-4111-8111-111111111111', record = { orderRef: ref, status: 'created', orderIds: ['123'], amountCents: 4690 }, calls = []
+  const officialOrders = [{ id: '123', status: '待支付' }]
+  const rpc = { async call(_channel, method, payload) {
+    calls.push(method)
+    if (method === 'accountsList') return ok({ accounts: [{ ref, nickname: '验收账号' }] })
+    if (method === 'paymentCredential') return ok({ configured: true, writable: true })
+    if (method === 'tradeHistory') return ok({ accountId: profile.id, attempts: [record] })
+    if (method === 'orders') return ok({ accountId: profile.id, orders: officialOrders })
+    if (method === 'paymentStatus') return ok({ accountId: profile.id, paymentStatus: 'requires-verification', officialOrders })
+    if (method === 'paymentH5Start') return ok({ h5Ref: ref, verificationRequired: true, state: 'requires-reconciliation', reason: 'business-error', submitted: false })
+    return method === 'profile' ? ok(profile) : ok({ authenticated: true, state: 'logged-in' })
+  } }
+  const mounted = await mount(rpc, { trade: (method, payload) => rpc.call('/waimai-login', method, payload) })
+  try {
+    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
+    await act(async () => button('支付配置').props.onClick())
+    await act(async () => button('检查待付款订单').props.onClick())
+    await act(async () => button('登录支付宝').props.onClick())
+    assert(text(mounted.renderer.toJSON()).includes('支付宝返回业务错误'))
+    assert.equal(calls.filter(x => x === 'paymentH5Authenticate').length, 0)
+  } finally { mounted.close() }
+})

@@ -54,6 +54,15 @@ test('a saved password cannot initiate a CLI payment without an existing H5 sess
   } finally { await f.dispose() }
 })
 
+test('settings verification cannot prepare or submit a new cashier payment', async () => {
+  const f = await fixture()
+  try {
+    await assert.rejects(f.cashier.h5Start({ orderRef, verificationOnly: true }), { code: 'h5-login-order-not-ready' })
+    assert.equal(f.calls.length, 0)
+    assert.equal((await f.cashier.ledger()).attempts.length, 0)
+  } finally { await f.dispose() }
+})
+
 test('private H5 continuation uses the original order and reserves before one backend payment', async () => {
   const f = await fixture(), httpCalls = []
   f.control.submit.targetUrl = 'https://maliprod.alipay.com/h5pay/index.html?contextId=synthetic-private-context'
@@ -80,6 +89,9 @@ test('private H5 continuation uses the original order and reserves before one ba
   try {
     const started = await f.cashier.h5Start(args)
     assert.equal(started.state, 'ready')
+    const resumed = await f.cashier.h5Start({ ...args, verificationOnly: true })
+    assert.equal(resumed.h5Ref, started.h5Ref)
+    assert.equal(f.calls.filter(call => call.api === 'submit').length, 1)
     f.cashier.h5Sessions.get(orderRef).envData = 'synthetic-private-environment'
     const ready = await f.cashier.prepare({ orderRef })
     assert.equal(ready.state, 'h5-ready')

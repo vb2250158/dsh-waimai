@@ -1,0 +1,4 @@
+[
+  { "action": "登录支付宝", "amount": "¥46.90" },
+  { "verified": true, "paymentButtons": 0, "paymentCalls": 0 }
+]
