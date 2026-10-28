@@ -1440,3 +1440,39 @@ test('leaving payment settings discards password input and a late save response 
     assert(!text(mounted.renderer.toJSON()).includes('支付密码已保存'))
   } finally { mounted.close() }
 })
+
+test('H5 reconciliation snapshots distinguish unsent, submitted and unknown outcomes without exposing raw reasons or offering a retry', async () => {
+  const cases = JSON.parse(await readFile(new URL('./fixtures/h5-reconciliation-view.json', import.meta.url), 'utf8'))
+  const accountRef = '11111111-1111-4111-8111-111111111111', h5Ref = '22222222-2222-4222-8222-222222222222'
+  const officialOrders = [{ id: '123', status: '待支付' }]
+  for (const example of cases) {
+    const calls = [], response = { state: 'requires-reconciliation', reason: example.reason,
+      ...(Object.hasOwn(example, 'submitted') ? { submitted: example.submitted } : {}), h5Ref,
+      verificationRequired: example.submitted === false, message: 'synthetic-private-server-message' }
+    const mounted = await mount({ async call(_channel, method) {
+      calls.push(method)
+      if (method === 'profile') return ok(profile)
+      if (method === 'orders') return ok({ accountId: profile.id, orders: officialOrders })
+      if (method === 'paymentStatus') return ok({ accountId: profile.id, paymentStatus: 'requires-verification', orderRef: accountRef, officialOrders })
+      if (method === 'paymentH5Start') return ok(example.submitted === false ? response : { h5Ref, state: 'ready', submitted: false })
+      if (method === 'paymentH5Submit') return ok(response)
+      if (method === 'paymentH5Authenticate') return ok({ state: 'requires-reconciliation', submitted: false })
+      throw Error('Unexpected operation: ' + method)
+    } }, { tool: { name: 'mcp__waimai__request_payment', props: { phase: 'result', sessionId: 'h5-reasons', callId: 'h5-reasons-call',
+      block: { content: [{ type: 'text', text: JSON.stringify({ success: true, data: { view: 'payment', platformId: 'taobao', accountRef,
+        attempts: [{ orderRef: accountRef }] } }) }] } } }, trade: async () => ok({ accountId: profile.id, attempts: [{ orderRef: accountRef,
+      merchant: '示例店', amountCents: 2100, status: 'created', orderIds: ['123'], paymentUrl: null, paymentStatus: 'requires-verification' }] }) })
+    try {
+      const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
+      await act(async () => button('连接 H5 收银台').props.onClick())
+      if (example.submitted !== false) await act(async () => button('确认后台付款 · ¥21.00').props.onClick())
+      const section = root.findAll(node => node.type === 'section' && node.props['aria-label'] === 'H5 后台付款')[0]
+      assert.deepEqual(section.findAll(node => node.type === 'p' && node.props.role === 'status').map(node => text(node.props.children)), [example.expected])
+      assert.equal(section.findAllByType('button').length, 0)
+      assert(!text(mounted.renderer.toJSON()).includes('synthetic-private-server-message'))
+      assert(!text(mounted.renderer.toJSON()).includes('synthetic-unrecognized-private-reason'))
+      assert(!text(mounted.renderer.toJSON()).includes('付款已确认'))
+      assert.equal(calls.filter(name => name === 'paymentH5Submit').length, example.submitted === false ? 0 : 1)
+    } finally { mounted.close() }
+  }
+})

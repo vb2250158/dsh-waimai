@@ -6,7 +6,7 @@ import { AlipayH5Session, h5Amount, h5Entry, h5Password, h5Query, resolveH5Entry
 const entryUrl = 'https://maliprod.alipay.com/h5pay/index.html?contextId=synthetic&from=test'
 const preconfirm = (biz = {}) => ({ success: true, params: { contextId: 'next' }, pageToken: 'fresh',
   data: { controlType: 'cashier_pre_confirm', bizData: { orderAmount: '47.10', npwdPay: true, ...biz } } })
-function setup(replies) {
+function setup(replies, initialEntry = entryUrl) {
   const calls = [], disposed = []
   const http = { async post(url, options) {
     calls.push({ url, options })
@@ -14,7 +14,7 @@ function setup(replies) {
     if (reply instanceof Error) throw reply
     return { ok: () => true, json: async () => reply, dispose: async () => disposed.push('response') }
   }, dispose: async () => disposed.push('context') }
-  return { calls, disposed, client: new AlipayH5Session({ http, entryUrl, timeoutMs: 1000,
+  return { calls, disposed, client: new AlipayH5Session({ http, entryUrl: initialEntry, timeoutMs: 1000,
     environment: { device: { userAgent: 'test-client' }, clientId: 'synthetic' }, now: () => 123 }) }
 }
 
@@ -41,7 +41,7 @@ test('H5 initialization matches same-origin JSON and updates continuation for th
   assert.equal(calls[1].options.data.envData, 'synthetic-environment')
   assert.equal(calls[0].options.maxRedirects, 0)
   assert.equal(calls[0].options.headers.Origin, 'https://maliprod.alipay.com')
-  assert.deepEqual(client.summary(), { state: 'requires-reconciliation', submitted: true })
+  assert.deepEqual(client.summary(), { state: 'requires-reconciliation', submitted: true, reason: 'payment-result' })
   assert.equal(disposed.length, 2)
 })
 
@@ -51,6 +51,49 @@ test('same-page responses preserve the current page token and replace other para
   await client.initialize(); await client.initialize()
   assert.equal(client.params.contextId, 'third')
   assert.equal(client.params.pageToken, 'fresh')
+})
+
+test('existing cashier subpages resume through the official refresh action and retain their query tokens', async () => {
+  for (const page of ['cashierPreConfirm', 'unifiedLogin', 'pwdValidate']) for (const flag of ['', 'Y', 'N']) {
+    const url = `https://maliprod.alipay.com/h5pay/${page}/index.html?contextId=resume&pageToken=a+b%252Bc&refreshNoAuth=${flag}`
+    const { client, calls } = setup([preconfirm()], url)
+    assert.equal((await client.initialize()).state, 'ready')
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].url, `https://maliprod.alipay.com/wapcashier/api/${flag === 'Y' ? 'refreshNoAuth' : 'refresh'}.json`)
+    assert.equal(calls[0].options.data.pageToken, 'a+b%2Bc')
+    assert.equal(calls[0].options.data.contextId, 'resume')
+    assert.equal(calls[0].options.data.supportWriteCookie, true)
+    assert.equal(Object.hasOwn(calls[0].options.data, 'device'), false)
+    assert.equal(calls[0].options.headers.Referer, url)
+    assert.equal(client.submitted, false)
+    await client.close()
+  }
+})
+
+test('an unfamiliar H5 page cannot be treated as a new cashier entry', async () => {
+  const { client, calls } = setup([], 'https://maliprod.alipay.com/h5pay/newStep/index.html?private=not-public')
+  await assert.rejects(client.initialize(), error => error.code === 'h5-page-unsupported' && !error.message.includes('not-public'))
+  assert.equal(calls.length, 0)
+  await client.close()
+})
+
+test('H5 progress distinguishes rejected and unfamiliar steps without exposing provider fields or claiming payment', async () => {
+  const cases = [
+    [{ controlType: 'cashier_error_follow_action' }, 'business-error'],
+    [{ controlType: 'cashier_pre_confirm', bizError: true }, 'business-error'],
+    [{ controlType: 'pay_failure' }, 'payment-failure-display'],
+    [{ controlType: 'h5_logout' }, 'signed-out'],
+    [{ controlType: 'cashier_pre_confirm', h5HalfScreen: true }, 'external-verification'],
+    [{ controlType: 'unrecognized-private-control' }, 'unsupported-step'],
+    [{ controlType: 'pay_success' }, 'payment-result'],
+  ]
+  for (const [data, reason] of cases) {
+    const { client, calls } = setup([{ success: true, data: { ...data, bizData: { msg: 'test-only-private' } } }])
+    assert.deepEqual(await client.initialize(), { state: 'requires-reconciliation', submitted: false, reason })
+    assert.equal(calls.length, 1)
+    assert(!JSON.stringify(client.summary()).includes('private'))
+    await client.close()
+  }
 })
 
 test('price or currency mismatch prevents reservation and submission', async () => {

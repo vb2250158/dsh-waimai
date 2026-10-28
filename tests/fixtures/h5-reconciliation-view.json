@@ -1,0 +1,66 @@
+[
+  {
+    "reason": "business-error",
+    "submitted": false,
+    "expected": "支付宝返回业务错误。 插件尚未提交后台付款。"
+  },
+  {
+    "reason": "payment-failure-display",
+    "submitted": false,
+    "expected": "支付宝显示付款失败页面。 插件尚未提交后台付款。"
+  },
+  {
+    "reason": "signed-out",
+    "submitted": false,
+    "expected": "支付宝登录状态已失效。 插件尚未提交后台付款。"
+  },
+  {
+    "reason": "external-verification",
+    "submitted": false,
+    "expected": "支付宝要求额外验证。 插件尚未提交后台付款。"
+  },
+  {
+    "reason": "unsupported-step",
+    "submitted": false,
+    "expected": "支付宝进入尚未支持的步骤。 插件尚未提交后台付款。"
+  },
+  {
+    "reason": "payment-result",
+    "submitted": false,
+    "expected": "支付宝已返回付款结果页面，仍需通过官方订单确认实际结果。 插件尚未提交后台付款。"
+  },
+  {
+    "reason": "business-error",
+    "submitted": true,
+    "expected": "支付宝返回业务错误。 后台付款请求已发送，实际结果请核对官方订单，请勿重复付款。"
+  },
+  {
+    "reason": "payment-failure-display",
+    "submitted": true,
+    "expected": "支付宝显示付款失败页面。 后台付款请求已发送，实际结果请核对官方订单，请勿重复付款。"
+  },
+  {
+    "reason": "signed-out",
+    "submitted": true,
+    "expected": "支付宝登录状态已失效。 后台付款请求已发送，实际结果请核对官方订单，请勿重复付款。"
+  },
+  {
+    "reason": "external-verification",
+    "submitted": true,
+    "expected": "支付宝要求额外验证。 后台付款请求已发送，实际结果请核对官方订单，请勿重复付款。"
+  },
+  {
+    "reason": "unsupported-step",
+    "submitted": true,
+    "expected": "支付宝进入尚未支持的步骤。 后台付款请求已发送，实际结果请核对官方订单，请勿重复付款。"
+  },
+  {
+    "reason": "payment-result",
+    "submitted": true,
+    "expected": "支付宝已返回付款结果页面，仍需通过官方订单确认实际结果。 后台付款请求已发送，实际结果请核对官方订单，请勿重复付款。"
+  },
+  {
+    "reason": "synthetic-unrecognized-private-reason",
+    "expected": "后台付款是否提交尚未确认，请核对官方订单，请勿重复付款。"
+  }
+]

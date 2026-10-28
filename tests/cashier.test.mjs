@@ -636,8 +636,11 @@ test('H5 connects verified browser state only to its owned pending order and ret
   f.cashier.h5Sessions.set(orderRef, current)
   f.trade.login.createContext = async options => {
     assert.equal(options.userAgent, 'verified-browser')
-    return { post: async () => ({ ok: () => true, dispose: async () => {}, json: async () => ({ success: true,
-      data: { controlType: 'cashier_pre_confirm', bizData: { orderAmount: f.control.amount, npwdPay: true } } }) }),
+    return { post: async (url, request) => {
+      assert.equal(url, 'https://maliprod.alipay.com/wapcashier/api/refresh.json')
+      assert.equal(Object.hasOwn(request.data, 'device'), false)
+      return { ok: () => true, dispose: async () => {}, json: async () => ({ success: true,
+      data: { controlType: 'cashier_pre_confirm', bizData: { orderAmount: f.control.amount, npwdPay: true } } }) } },
     storageState: async () => snapshot.storageState, dispose: async () => { newClosed++ } }
   }
   try {
@@ -649,6 +652,33 @@ test('H5 connects verified browser state only to its owned pending order and ret
     assert.equal(f.calls.filter(call => call.api === 'submit').length, 0)
     await f.cashier.close(); assert.equal(newClosed, 1); assert.equal(f.cashier.h5Authentication, null)
   } finally { await f.dispose() }
+})
+
+test('failed H5 resume preserves the original payment session and open verification window without submitting', async () => {
+  for (const controlType of ['unified_login', 'cashier_error_follow_action']) {
+    const f = await fixture(), h5Ref = '22222222-2222-4222-8222-222222222222'
+    let oldClosed = 0, browserClosed = 0, disposed = 0
+    const oldClient = { submitted: false, close: async () => { oldClosed++ } }
+    const current = { ref: h5Ref, accountId: 'owner', client: oldClient, verification: {
+      snapshot: async () => ({ entryUrl: 'https://maliprod.alipay.com/h5pay/unifiedLogin/index.html?refreshNoAuth=Y',
+        storageState: { cookies: [], origins: [] }, environment: { device: { userAgent: 'verified-browser' } } }),
+      close: async () => { browserClosed++ } } }
+    f.cashier.h5Sessions.set(orderRef, current)
+    f.trade.login.createContext = async () => ({ post: async url => {
+      assert.equal(url, 'https://maliprod.alipay.com/wapcashier/api/refreshNoAuth.json')
+      return { ok: () => true, dispose: async () => {}, json: async () => ({ success: true,
+        data: { controlType, bizData: { msg: 'test-only-private' } } }) }
+    }, dispose: async () => { disposed++ } })
+    try {
+      const result = await f.cashier.h5Authenticate({ orderRef, h5Ref, operation: 'connect' })
+      assert.equal(result.submitted, false)
+      assert.equal(current.client, oldClient); assert.equal(oldClosed, 0); assert.equal(browserClosed, 0)
+      assert.equal(disposed, 1); assert.equal(current.envData, undefined)
+      assert.equal(f.calls.filter(call => call.api === 'submit').length, 0)
+      assert(!JSON.stringify({ result, logs: f.logs }).includes('test-only-private'))
+      if (controlType === 'cashier_error_follow_action') assert.equal(result.reason, 'business-error')
+    } finally { await f.cashier.close(); await f.dispose() }
+  }
 })
 
 test('H5 preview cannot create an intent or submit a payment', async () => {

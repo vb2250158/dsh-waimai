@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.28
+
+- Resume verified H5 login, password and pre-confirmation pages with the provider's refresh action instead of restarting cashier initialization; unsupported pages stop without sending a request.
+- Distinguish provider rejection, sign-out, external verification, unfamiliar steps and result displays without exposing provider text. Payment cards separately show whether the backend submitted a payment; live payment acceptance remains incomplete.
+
 ## 0.8.27
 
 - Add account-bound Alipay password management in payment settings through the DSH credentials service, with presence-only status and independent save/remove controls.
