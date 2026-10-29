@@ -309,7 +309,7 @@ test('login HTTP channel authorizes, validates RPC envelopes and excludes secret
     assert.deepEqual(connection.result.value, { configured: false, available: false, version: null, reason: 'not-configured' })
     assert.equal(paymentChecks, 1)
     assert.equal(called, 10)
-    const credential = { platformId: 'taobao', accountRef: owner.accountRef, operation: 'save', password: '000000' }
+    const credential = { operation: 'save', password: '000000' }
     assert.equal((await call('paymentCredential', credential, { headers: { authorization: '' } })).status, 401)
     for (const invalid of [{ ...credential, key: 'foreign/credential' }, { ...credential, password: '123' },
       { ...credential, operation: 'status' }, { ...credential, platformId: 'hema' }]) {

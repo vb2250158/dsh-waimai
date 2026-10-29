@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.32
+
+- Store the Alipay payment password independently from shopping channels and local account references. Reconnecting a shopping account no longer requires setting the same password again.
+- Migrate matching legacy passwords privately, report conflicting legacy values without choosing one, and prevent removed passwords from being restored by migration. Payment settings are available without shopping sign-in; order ownership and payment limits remain enforced. See the 0.8.32 migration guide for the changed private RPC.
+
 ## 0.8.31
 
 - Display provider-requested phone and SMS inputs directly in payment settings, using private RPC and the official page's SDK in an owned backend browser. Clear submitted inputs and keep payment separate from sign-in.
