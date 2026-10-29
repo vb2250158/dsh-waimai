@@ -8,6 +8,8 @@ Alipay sign-in in payment settings displays the login-channel choices, phone or 
 
 Login choices come from the current official page. Selection opens the phone form in settings and does not submit payment. These are sign-in entries, not verified linked cards or a selected funding source. Expired choice references require refreshing the current step.
 
+Agreement titles accept the official inline `name` and list `text` fields. Conflicting titles are rejected; both forms retain the same link validation and explicit user consent.
+
 Verification continues the selected account's valid pending order and existing Alipay H5 session; the backend rejects preparation or payment submission when no session exists. Sign-in before order creation is not supported, and verification material remains in the current plugin process. The backend rechecks the original order amount and SDK environment before connecting the verified session. Settings verification does not pay. The ordinary cashier connection in an order payment card can still call the platform payment submission API; it is distinct from settings-only verification.
 
 Authenticated local clients can call the existing retail and payment tools through `retailSearch`, `retailCart`, `retailAdd`, `retailCheckout`, `paymentOptions` and `paymentPay` under `/waimai-login`, without model generation. These routes retain DSH session authentication, strict input validation, order ownership, quote expiry, spending limits and unknown-outcome safeguards. `paymentPay` rejects passwords and payment URLs; saved credentials are injected only by the Host. Requests carry an RPC request ID. After a timeout, query the original cart or order instead of resending. Live payment acceptance remains incomplete.

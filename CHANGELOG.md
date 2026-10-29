@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.38
+
+- Accept the official agreement list's `text` title as well as the inline `name` title. Reject conflicting titles and retain the same public-link checks and explicit current-step consent.
+
 ## 0.8.37
 
 - Distinguish agreement-list, name, URL, host, path, query and agreement-ID failures in private login diagnostics. Report only fixed categories and a separate named-protocol flag; agreement admission and consent requirements are unchanged.

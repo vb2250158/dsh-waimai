@@ -60,6 +60,8 @@ test('register-bind channels open the hidden phone panel without sending login o
       const form = new H5InlineLogin(page, 1000)
       const item = { value: 'test-balance', name: '测试余额' }
       const data = { controlType: 'unified_login', bizData: { h5RegisterBindPay: true,
+        protocols: [{ text: '测试登录协议', url: 'https://render.alipay.com/p/f/test.html?agreementId=AG00000011' },
+          { text: '测试隐私协议', url: 'https://render.alipay.com/p/f/test.html?agreementId=AG01000912' }],
         groups: [{ groupCode: 'balanceChannel' }, { groupCode: 'otherChannel' }],
         channelInfoMap: { balanceChannel: [item], otherChannel: [{ value: 'test-action', name: '禁止动作', action: '/cashierPay' }] } } }
       await page.evaluate(selected => {
@@ -76,7 +78,11 @@ test('register-bind channels open the hidden phone panel without sending login o
       assert.equal(input.channels[0].label, '测试余额')
       assert(!JSON.stringify(input).includes('test-balance'))
       assert.equal(await page.getByPlaceholder('请输入手机号').isVisible(), false)
-      assert.deepEqual(await form.submit({ operation: 'channel', channelRef: input.channels[0].channelRef }), { kind: 'phone' })
+      const phone = await form.submit({ operation: 'channel', channelRef: input.channels[0].channelRef })
+      assert.equal(phone.kind, 'phone')
+      assert.deepEqual(phone.agreements, data.bizData.protocols.map(({ text, url }) => ({ name: text, url })))
+      assert.equal(typeof phone.agreementRef, 'string')
+      await assert.rejects(form.submit({ operation: 'phone', phone: '13000000000' }), { code: 'h5-login-agreement-required' })
       assert.deepEqual(await page.evaluate(() => [window.channelClicks, window.footerClicks]), selected ? [0, 1] : [1, 0])
       for (const action of ['cashierPay', 'unifiedLogin', 'smsValidateLogin']) assert.equal(form.consumeRequest(action), false)
       assert.equal(requests, 1)

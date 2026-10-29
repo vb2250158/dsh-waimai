@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { H5InlineLogin, loginInput, loginDiagnostic, loginAgreements } from '../lib/alipay-h5-login.js'
+import { H5InlineLogin, loginInput, loginDiagnostic, loginAgreements, loginNeedsExternal } from '../lib/alipay-h5-login.js'
 
 const agreementsPage = () => ({ controlType: 'unified_login', bizData: { h5RegisterBindPay: true,
   protocols: [{ name: '测试登录协议', url: 'https://render.alipay.com/p/yuyan/180020010001196791/preview.html?agreementId=AG00000011' }],
@@ -167,6 +167,19 @@ test('agreement rejection diagnostics identify the failing field without exposin
   }
   assert.equal(loginDiagnostic('provider-confirmation', { data: { ...page, bizData: { protocols: [{}] } } }).agreementCheck, 'unsupported-page')
   assert.equal(loginDiagnostic('provider-confirmation', { data: { ...page, bizData: { ...page.bizData, protocols: {} } } }).agreementCheck, 'invalid-list')
+})
+
+test('official agreement-list text titles use the same consent projection as inline name titles', () => {
+  const url = 'https://render.alipay.com/p/f/test.html?agreementId=AG00000011'
+  const data = { controlType: 'unified_login', bizData: { h5RegisterBindPay: true,
+    protocols: [{ text: '登录协议', url }, { name: '隐私协议', url }] } }
+  assert.deepEqual(loginAgreements(data), [{ name: '登录协议', url }, { name: '隐私协议', url }])
+  assert.equal(loginDiagnostic('provider-confirmation', { data }).agreementCheck, 'accepted')
+  assert.equal(loginNeedsExternal(data), false)
+  for (const protocol of [{ text: '', url }, { text: 123, url }, { name: '', text: '另一标题', url },
+    { name: '协议', text: '不同协议', url }, { text: '协议', url: 'https://example.test/private' }]) {
+    assert.equal(loginAgreements({ ...data, bizData: { ...data.bizData, protocols: [protocol] } }), null)
+  }
 })
 
 test('first external cause survives later timeout and is cleared on a successful new step or disposal', async () => {
