@@ -1,0 +1,8 @@
+{
+  "agreements": [
+    { "name": "支付宝隐私协议", "url": "https://render.alipay.com/p/f/agreement-test.html" },
+    { "name": "<b>登录服务协议</b>", "url": "https://render.alipay.com/p/f/login-agreement-test.html" }
+  ],
+  "consent": false,
+  "submitDisabled": true
+}

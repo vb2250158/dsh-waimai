@@ -1,6 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { H5InlineLogin, loginInput, loginDiagnostic } from '../lib/alipay-h5-login.js'
+import { H5InlineLogin, loginInput, loginDiagnostic, loginAgreements } from '../lib/alipay-h5-login.js'
+
+const agreementsPage = () => ({ controlType: 'unified_login', bizData: { h5RegisterBindPay: true,
+  protocols: [{ name: '测试登录协议', url: 'https://render.alipay.com/p/yuyan/180020010001196791/preview.html?agreementId=AG00000011' }],
+  channelInfoMap: { balanceChannel: [{ value: 'synthetic-balance', name: '测试余额' }] } } })
 
 function fixture(timeoutMs = 50) {
   const calls = [], controls = { count: 1, enabled: true }
@@ -52,6 +56,42 @@ test('phone dispatch clicks the official button once; SMS fills once without a s
   assert.equal(f.calls.filter(x => x.selector.includes('one-time-code')).length, 1)
   assert(!JSON.stringify(f.form).includes('13000000000'))
   assert(!JSON.stringify(f.form).includes('0000'))
+})
+
+test('known login agreements may be displayed without admitting registration, enrollment or private links', () => {
+  const data = agreementsPage()
+  assert.equal(loginInput(data).kind, 'channel')
+  assert.deepEqual(loginAgreements(data), data.bizData.protocols)
+  for (const extra of [{ registering: true }, { h5AutoRegisterQuser: true }, { pwdValidateType: 'newCard' },
+    { pwdValidateType: 'openService' }, { chargeMsg: 'charge' }, { protocolName: 'additional-agreement' }]) {
+    assert.equal(loginInput({ ...data, bizData: { ...data.bizData, ...extra } }).kind, 'external')
+  }
+  for (const url of ['javascript:alert(1)', 'https://example.test/p/terms', 'http://render.alipay.com/p/terms',
+    'https://render.alipay.com/p/terms?token=test-only-private', 'https://render.alipay.com/p/terms#test-only-private',
+    'https://name:password@render.alipay.com/p/terms']) {
+    const rejected = { ...data, bizData: { ...data.bizData, protocols: [{ name: '测试', url }] } }
+    assert.equal(loginAgreements(rejected), null); assert.equal(loginInput(rejected).kind, 'external')
+  }
+  assert.equal(loginAgreements({ ...data, bizData: { ...data.bizData, protocols: {} } }), null)
+})
+
+test('phone submission requires the user acknowledgement for the current agreement set before touching controls', async () => {
+  const f = fixture(), data = agreementsPage()
+  f.form.observe(data, 'refreshNoAuth')
+  const current = await f.form.describe()
+  assert.equal(current.kind, 'phone'); assert.equal(current.agreements.length, 1)
+  assert.match(current.agreementRef, /^[0-9a-f-]{36}$/)
+  await assert.rejects(f.form.submit({ operation: 'phone', phone: '13000000000' }), { code: 'h5-login-agreement-required' })
+  assert.equal(f.calls.length, 0)
+  f.form.observe(structuredClone(data), 'refreshNoAuth')
+  await assert.rejects(f.form.submit({ operation: 'phone', phone: '13000000000', agreementRef: current.agreementRef }), { code: 'h5-login-agreement-required' })
+  assert.equal(f.calls.length, 0)
+  const refreshed = await f.form.describe()
+  f.respond(async () => f.form.observe({ controlType: 'need_loginsms_verify', bizData: {} }, 'unifiedLogin'))
+  assert.equal((await f.form.submit({ operation: 'phone', phone: '13000000000', agreementRef: refreshed.agreementRef })).kind, 'sms')
+  assert.equal(f.calls.filter(x => x.type === 'click').length, 1)
+  await assert.rejects(f.form.submit({ operation: 'sms', code: '000000', agreementRef: refreshed.agreementRef }), { code: 'h5-login-input-invalid' })
+  f.form.close(); assert.equal(f.form.agreementRef, null)
 })
 
 test('SMS resend follows the official available button and preserves the SMS stage', async () => {

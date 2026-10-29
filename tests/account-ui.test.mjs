@@ -1876,3 +1876,75 @@ test('switching accounts discards late method selection and does not read method
     assert(!calls.some(x => ['paymentH5Submit', 'submit', 'paymentPay'].includes(x.method)))
   } finally { mounted.close() }
 })
+
+test('phone login shows official agreements and requires explicit current consent before sending only the agreement reference', async () => {
+  const response = deferred(), storage = [], mutations = []
+  const agreementRef = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa'
+  const agreements = [{ name: '支付宝隐私协议', url: 'https://render.alipay.com/p/f/agreement-test.html' },
+    { name: '<b>登录服务协议</b>', url: 'https://render.alipay.com/p/f/login-agreement-test.html' }]
+  const mounted = await mountInlineSettings(payload => payload.operation === 'phone' ? response.promise
+    : inlineProgress({ kind: 'phone', agreementRef, agreements }), {
+    storage: { getItem: () => null, setItem: (...value) => storage.push(value) }, mutate: async ops => { mutations.push(ops); return true },
+  })
+  try {
+    const { root, input, button, calls, first } = mounted
+    const checkbox = () => root.findAll(node => node.type === 'span' && node.props.label === '我已阅读并同意以上协议')[0]
+    assert.equal(checkbox().props.checked, false)
+    const links = root.findAllByType('a').filter(node => agreements.some(agreement => agreement.url === node.props.href))
+    assert.deepEqual(links.map(node => ({ name: node.props.children, url: node.props.href })), agreements)
+    assert(links.every(node => node.props.target === '_blank' && node.props.rel === 'noopener noreferrer'))
+    assert.deepEqual({ agreements: links.map(node => ({ name: node.props.children, url: node.props.href })),
+      consent: checkbox().props.checked, submitDisabled: button('下一步').props.disabled },
+    JSON.parse(await readFile(new URL('./fixtures/settings-login-agreements.json', import.meta.url), 'utf8')))
+    await act(async () => input('支付宝手机号').props.onChange({ target: { value: '13800000000' } }))
+    assert.equal(button('下一步').props.disabled, true)
+    await act(async () => { button('下一步').props.onClick(); input('支付宝手机号').props.onKeyDown({ key: 'Enter', preventDefault() {}, stopPropagation() {} }) })
+    assert.equal(calls.filter(x => x.payload.operation === 'phone').length, 0)
+    await act(async () => checkbox().props.onChange(true))
+    assert.equal(button('下一步').props.disabled, false)
+    await act(async () => { button('下一步').props.onClick(); button('下一步').props.onClick() })
+    assert.equal(input('支付宝手机号').props.value, '')
+    assert.equal(checkbox().props.checked, false)
+    const sent = calls.filter(x => x.payload.operation === 'phone')
+    assert.equal(sent.length, 1)
+    assert.deepEqual(sent[0].payload, { platformId: 'taobao', orderRef: first, accountRef: first, h5Ref: first, operation: 'phone', phone: '13800000000', agreementRef })
+    await act(async () => response.resolve(inlineProgress({ kind: 'sms', codeLength: 4 })))
+    assert(input('支付宝短信验证码'))
+    await act(async () => root.findByType('form').props.onSubmit({ preventDefault() {} }))
+    assert(!JSON.stringify(storage).includes(agreementRef)); assert(!JSON.stringify(mutations).includes(agreementRef))
+    assert(!calls.some(x => ['paymentH5Submit', 'submit', 'paymentPay'].includes(x.method)))
+  } finally { mounted.close() }
+})
+
+test('new phone agreements clear prior consent, missing agreement references block submission and agreement-free login stays unchanged', async () => {
+  let step = 0
+  const oldRef = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', newRef = 'bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb'
+  const agreements = [{ name: '官方协议', url: 'https://render.alipay.com/p/f/agreement-test.html' }]
+  const mounted = await mountInlineSettings(payload => {
+    if (payload.operation === 'refresh') step++
+    return inlineProgress({ kind: 'phone', ...(step < 3 ? { agreements } : {}), ...(step < 2 ? { agreementRef: step ? newRef : oldRef } : {}) })
+  })
+  try {
+    const { root, input, button, calls } = mounted
+    const checkbox = () => root.findAll(node => node.type === 'span' && node.props.label === '我已阅读并同意以上协议')[0]
+    await act(async () => checkbox().props.onChange(true))
+    await act(async () => button('刷新验证状态').props.onClick())
+    assert.equal(checkbox().props.checked, false)
+    await act(async () => input('支付宝手机号').props.onChange({ target: { value: '13800000000' } }))
+    assert.equal(button('下一步').props.disabled, true)
+    await act(async () => checkbox().props.onChange(true))
+    await act(async () => button('下一步').props.onClick())
+    assert.equal(calls.filter(x => x.payload.operation === 'phone').at(-1).payload.agreementRef, newRef)
+    assert.equal(checkbox().props.checked, false)
+    await act(async () => button('刷新验证状态').props.onClick())
+    assert.equal(checkbox().props.disabled, true)
+    await act(async () => input('支付宝手机号').props.onChange({ target: { value: '13800000000' } }))
+    assert.equal(button('下一步').props.disabled, true)
+    await act(async () => button('刷新验证状态').props.onClick())
+    assert.equal(checkbox(), undefined)
+    await act(async () => input('支付宝手机号').props.onChange({ target: { value: '13800000000' } }))
+    assert.equal(button('下一步').props.disabled, false)
+    await act(async () => button('下一步').props.onClick())
+    assert.equal(Object.hasOwn(calls.filter(x => x.payload.operation === 'phone').at(-1).payload, 'agreementRef'), false)
+  } finally { mounted.close() }
+})

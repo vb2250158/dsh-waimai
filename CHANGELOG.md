@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.36
+
+- Show recognized Alipay login agreements in payment settings with explicit, initially unchecked consent before phone submission. Consent expires when the order, login session or provider step changes.
+- Keep unknown agreements, registration, card binding and service activation outside inline login. Public agreement links are restricted to the official agreement host; private response fields are not projected. Live payment acceptance remains incomplete.
+
 ## 0.8.35
 
 - Return bounded private diagnostics for unsupported inline Alipay login steps, preserving the first observed cause. Distinguish request, response and presentation failures without exposing response text, credentials or URLs. Existing request-admission rules are unchanged.
