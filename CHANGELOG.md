@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.34
+
+- Add explicit payment-method listing and selection to payment settings after Alipay verification. Keep funding choices private to the current cashier session and separate from payment submission.
+- Confirm the selected combination and unchanged amount, reject extra agreements and dynamic actions, and block payment after unknown selection outcomes until readback confirms the result. Refresh never resubmits a selection.
+
 ## 0.8.33
 
 - Display official Alipay login-channel choices in payment settings before phone and SMS input. Handle the initially selected entry without waiting for an invisible phone form.

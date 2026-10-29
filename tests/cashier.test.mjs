@@ -725,3 +725,41 @@ test('inline login forwards only the owned current step and cannot resume paymen
     assert(!JSON.stringify({ result, logs: f.logs }).includes('13000000000'))
   } finally { await f.cashier.close(); await f.dispose() }
 })
+
+
+test('payment settings select only an owned verified pending cashier without creating payment attempts', async () => {
+  const f = await fixture(), h5Ref = '22222222-2222-4222-8222-222222222222', calls = []
+  const projection = { state: 'ready', submitted: false, amountCents: 300, methods: [] }
+  const current = { ref: h5Ref, accountId: 'owner', envData: 'synthetic-sdk', client: {
+    data: { controlType: 'cashier_pre_confirm', bizData: { cost: '3.00' } }, submitted: false,
+    methods: async () => { calls.push('list'); return projection },
+    selectMethod: async ref => { calls.push(ref); return projection }, close: async () => {},
+  } }
+  f.cashier.h5Sessions.set(orderRef, current)
+  const args = { orderRef, h5Ref, operation: 'list' }
+  try {
+    for (const invalid of [{ ...args, operation: 'select' }, { ...args, methodRef: h5Ref }, { ...args, operation: 'pay' }]) {
+      await assert.rejects(f.cashier.h5Methods(invalid), { code: 'h5-method-input-invalid' })
+    }
+    await assert.rejects(f.cashier.h5Methods({ ...args, h5Ref: orderRef }), { code: 'h5-session-expired' })
+    current.envData = null
+    await assert.rejects(f.cashier.h5Methods(args), { code: 'h5-verification-required' })
+    current.envData = 'synthetic-sdk'; current.accountId = 'another-owner'
+    await assert.rejects(f.cashier.h5Methods(args), { code: 'h5-session-expired' })
+    current.accountId = 'owner'; current.client.submitted = true
+    await assert.rejects(f.cashier.h5Methods(args), { code: 'h5-session-expired' })
+    current.client.submitted = false
+    assert.equal(calls.length, 0)
+    assert.deepEqual(await f.cashier.h5Methods(args), { orderRef, h5Ref, ...projection })
+    assert.deepEqual(await f.cashier.h5Methods({ ...args, operation: 'select', methodRef: h5Ref }), { orderRef, h5Ref, ...projection })
+    assert.deepEqual(calls, ['list', h5Ref])
+    current.client.data.bizData.cost = '3.01'
+    await assert.rejects(f.cashier.h5Methods(args), { code: 'payment-amount-changed' })
+    current.client.data.bizData.cost = '3.00'; projection.amountCents = 301
+    await assert.rejects(f.cashier.h5Methods(args), { code: 'payment-amount-changed' })
+    projection.amountCents = 300; f.control.status = '已取消'
+    await assert.rejects(f.cashier.h5Methods(args))
+    assert.equal(f.calls.filter(call => call.api === 'submit').length, 0)
+    assert.equal((await f.cashier.ledger()).attempts.length, 0)
+  } finally { await f.cashier.close(); await f.dispose() }
+})

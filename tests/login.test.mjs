@@ -351,5 +351,19 @@ test('login HTTP channel authorizes, validates RPC envelopes and excludes secret
       assert.equal((await response.json()).result.ok, true)
     }
     assert.equal(called, 16)
+    const funding = { ...receipt, h5Ref: owner.accountRef, operation: 'list' }
+    assert.equal((await call('paymentH5Methods', funding, { headers: { authorization: '' } })).status, 401)
+    for (const invalid of [{ ...funding, operation: 'select' }, { ...funding, methodRef: owner.accountRef },
+      { ...funding, operation: 'select', methodRef: 'raw-provider-id' }, { ...funding, action: '/cashierPay' }]) {
+      assert.equal((await (await call('paymentH5Methods', invalid)).json()).result.ok, false)
+    }
+    assert.equal(called, 16)
+    for (const payload of [funding, { ...funding, operation: 'select', methodRef: owner.accountRef }]) {
+      const response = await call('paymentH5Methods', payload)
+      assert.equal(response.headers.get('cache-control'), 'no-store')
+      assert.equal((await response.json()).result.ok, true)
+    }
+    assert.equal(called, 18)
+    assert(LOGIN_TOOLS.includes('account_payment_h5_methods'))
   } finally { server.closeAllConnections(); await new Promise(resolve=>server.close(resolve)) }
 })

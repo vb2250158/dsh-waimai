@@ -1625,6 +1625,7 @@ async function mountInlineSettings(authenticate, options = {}) {
     if (method === 'paymentStatus') return ok({ accountId: profile.id, orderRef: first, paymentStatus: 'requires-verification', officialOrders })
     if (method === 'paymentH5Start') return ok({ h5Ref: first, state: 'requires-verification', verificationRequired: true, submitted: false })
     if (method === 'paymentH5Authenticate') return authenticate(payload)
+    if (method === 'paymentH5Methods') return options.paymentMethods(payload)
     return method === 'profile' ? ok(profile) : ok({ authenticated: true, state: 'logged-in' })
   } }
   const mounted = await mount(rpc, { ...options, trade: (method, payload) => rpc.call('/waimai-login', method, payload) })
@@ -1796,6 +1797,82 @@ test('a late login channel selection cannot restore the previous shopping accoun
     const cancelled = calls.filter(x => x.method === 'paymentH5Authenticate' && x.payload.operation === 'cancel')
     assert.equal(cancelled.length, 1)
     assert.equal(cancelled[0].payload.accountRef, first)
+    assert(!calls.some(x => ['paymentH5Submit', 'submit', 'paymentPay'].includes(x.method)))
+  } finally { mounted.close() }
+})
+
+const cashierMethods = (payload, methods) => ok({ orderRef: payload.orderRef, h5Ref: payload.h5Ref, state: 'ready', submitted: false, amountCents: 4690, methods })
+const methodA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', methodB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+
+test('settings payment methods load and select only explicitly, show backend readback and never pay or persist method references', async () => {
+  const selecting = deferred(), storage = [], mutations = [], label = '<b>银行卡（1234）</b>'
+  const methods = [{ methodRef: methodA, label, selected: true }, { methodRef: methodB, label, selected: false }]
+  const mounted = await mountInlineSettings(() => ok({ state: 'ready', verificationRequired: false, submitted: false }), {
+    paymentMethods: payload => payload.operation === 'list' ? cashierMethods(payload, methods) : selecting.promise,
+    storage: { getItem: () => null, setItem: (...value) => storage.push(value) }, mutate: async ops => { mutations.push(ops); return true },
+  })
+  try {
+    const { button, calls, root, first } = mounted
+    assert.equal(calls.filter(x => x.method === 'paymentH5Methods').length, 0)
+    assert(text(mounted.renderer.toJSON()).includes('不会保存为跨订单默认银行卡'))
+    await act(async () => button('刷新付款方式').props.onClick())
+    const rows = () => root.findAll(node => node.type === 'div' && node.props.className === 'waimai-order' && node.findAllByType('button').some(child => text(child.props.children) === '选择此方式'))
+    assert.equal(rows().length, 2)
+    assert.deepEqual(rows().map(row => row.findAllByType('span')[0].props.children), [label, label])
+    assert.deepEqual(rows().map(row => row.findByType('button').props.disabled), [true, false])
+    const select = rows()[1].findByType('button').props.onClick
+    await act(async () => { select(); select() })
+    assert.equal(rows().length, 0)
+    assert.equal(button('刷新付款方式').props.disabled, true)
+    const selections = calls.filter(x => x.method === 'paymentH5Methods' && x.payload.operation === 'select')
+    assert.equal(selections.length, 1)
+    assert.deepEqual(selections[0].payload, { platformId: 'taobao', accountRef: first, orderRef: first, h5Ref: first, operation: 'select', methodRef: methodB })
+    await act(async () => selecting.resolve(cashierMethods(selections[0].payload, methods.map(method => ({ ...method, selected: method.methodRef === methodB })))))
+    assert.deepEqual(rows().map(row => row.findByType('button').props.disabled), [false, true])
+    assert.deepEqual(rows().map(row => row.findAllByProps({ role: 'status' }).map(child => text(child.props.children))), [[], ['当前已选']])
+    assert(text(mounted.renderer.toJSON()).includes('当前收银台金额 · ¥46.90'))
+    await act(async () => root.findByType('form').props.onSubmit({ preventDefault() {} }))
+    assert(!JSON.stringify(storage).includes(methodB)); assert(!JSON.stringify(mutations).includes(methodB))
+    assert(!calls.some(x => ['paymentH5Submit', 'submit', 'paymentPay'].includes(x.method)))
+  } finally { mounted.close() }
+})
+
+test('failed payment method selection clears old choices until an explicit refresh and never echoes backend errors', async () => {
+  const mounted = await mountInlineSettings(() => ok({ state: 'ready', submitted: false }), {
+    paymentMethods: payload => payload.operation === 'select' ? { ok: false, error: { message: 'synthetic-private-method-error' } }
+      : cashierMethods(payload, [{ methodRef: methodA, label: '银行卡', selected: false }]),
+  })
+  try {
+    const { button, calls } = mounted
+    await act(async () => button('刷新付款方式').props.onClick())
+    await act(async () => button('选择此方式').props.onClick())
+    assert.equal(button('选择此方式'), undefined)
+    assert(text(mounted.renderer.toJSON()).includes('旧列表已清空'))
+    assert(!text(mounted.renderer.toJSON()).includes('synthetic-private-method-error'))
+    assert.deepEqual(calls.filter(x => x.method === 'paymentH5Methods').map(x => x.payload.operation), ['list', 'select'])
+    await act(async () => button('刷新付款方式').props.onClick())
+    assert(button('选择此方式'))
+    assert(!text(mounted.renderer.toJSON()).includes('旧列表已清空'))
+    assert(!calls.some(x => ['paymentH5Submit', 'submit', 'paymentPay'].includes(x.method)))
+  } finally { mounted.close() }
+})
+
+test('switching accounts discards late method selection and does not read methods for the new account automatically', async () => {
+  const delayed = deferred()
+  const mounted = await mountInlineSettings(() => ok({ state: 'ready', submitted: false }), {
+    paymentMethods: payload => payload.operation === 'select' ? delayed.promise : cashierMethods(payload, [{ methodRef: methodA, label: '旧账户银行卡', selected: false }]),
+  })
+  try {
+    const { button, root, first, second, calls } = mounted
+    await act(async () => button('刷新付款方式').props.onClick())
+    await act(async () => button('选择此方式').props.onClick())
+    const request = calls.find(x => x.method === 'paymentH5Methods' && x.payload.operation === 'select').payload
+    const selector = root.findAll(node => node.type === 'span' && node.props.className === 'waimai-choice' && node.props.selectedId === first)[0]
+    await act(async () => selector.props.onSelect(second))
+    await act(async () => delayed.resolve(cashierMethods(request, [{ methodRef: methodA, label: '旧账户银行卡', selected: true }])))
+    assert.equal(button('刷新付款方式'), undefined)
+    assert(!text(mounted.renderer.toJSON()).includes('旧账户银行卡'))
+    assert(!calls.some(x => x.method === 'paymentH5Methods' && x.payload.accountRef === second))
     assert(!calls.some(x => ['paymentH5Submit', 'submit', 'paymentPay'].includes(x.method)))
   } finally { mounted.close() }
 })

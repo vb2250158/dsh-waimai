@@ -47,6 +47,7 @@ const EXPECTED_TOOLS = [
   'account_trade_history',
   'account_payment_status',
   'account_payment_provider_receipt',
+  'account_payment_h5_methods',
   'account_payment_h5_authenticate',
   'account_payment_h5_start',
   'account_payment_h5_submit',

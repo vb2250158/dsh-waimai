@@ -1,5 +1,7 @@
 # dsh-waimai
 
+After Alipay verification, payment settings show the current cashier’s payment methods. Users explicitly refresh the available choices and select one; the UI shows the backend-confirmed selection without paying. Only returned methods requiring no enrollment, card binding or additional agreement are selectable. Session references distinguish identically named cards. An unconfirmed selection blocks payment; refreshing reads back the result without selecting again. References are not persisted as default cards across orders. The payment password and spending limits remain shared settings. Live payment acceptance remains incomplete.
+
 Alipay sign-in in payment settings displays the login-channel choices, phone or SMS field requested by the current provider step and submits it through authenticated private RPC. An isolated backend browser runs the official page and its existing risk SDK. Each explicit input permits one corresponding request; SMS is never resent automatically and accepts the provider's four- or six-digit length. Submitted inputs are cleared from UI state and excluded from ordinary settings and logs. Additional human verification, registration, agreements and unfamiliar steps stop inline input and offer the official window.
 
 Login choices come from the current official page. Selection opens the phone form in settings and does not submit payment. These are sign-in entries, not verified linked cards or a selected funding source. Expired choice references require refreshing the current step.
