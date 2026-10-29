@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.31
+
+- Display provider-requested phone and SMS inputs directly in payment settings, using private RPC and the official page's SDK in an owned backend browser. Clear submitted inputs and keep payment separate from sign-in.
+- Permit one matching request per explicit login action, wait for the next rendered step before connecting, and stop on unknown, registration, agreement or additional verification responses. Keep resend governed by the official countdown and retain manual verification when required.
+
 ## 0.8.30
 
 - Add account-scoped Alipay verification to payment settings, without exposing payment actions or allowing new cashier submissions. Keep password configuration separate from authentication and explain the pending-order requirement.

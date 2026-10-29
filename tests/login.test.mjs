@@ -335,5 +335,19 @@ test('login HTTP channel authorizes, validates RPC envelopes and excludes secret
     assert.equal((await (await call('paymentH5Submit', { ...h5Verify, action: '/arbitrary' })).json()).result.ok, false)
     assert.equal((await (await call('paymentH5Submit', h5Verify)).json()).result.ok, true)
     assert.equal(called, 12)
+    const authentication = { ...receipt, h5Ref: owner.accountRef, operation: 'phone', phone: '13000000000' }
+    assert.equal((await call('paymentH5Authenticate', authentication, { headers: { authorization: '' } })).status, 401)
+    for (const invalid of [{ ...authentication, phone: '123' }, { ...authentication, url: 'https://attacker.test' },
+      { ...authentication, operation: 'execute' }, { ...authentication, code: '12345' }]) {
+      assert.equal((await (await call('paymentH5Authenticate', invalid)).json()).result.ok, false)
+    }
+    assert.equal(called, 12)
+    for (const payload of [authentication, { ...authentication, phone: undefined, operation: 'sms', code: '0000' },
+      { ...authentication, phone: undefined, operation: 'refresh' }]) {
+      const response = await call('paymentH5Authenticate', payload)
+      assert.equal(response.headers.get('cache-control'), 'no-store')
+      assert.equal((await response.json()).result.ok, true)
+    }
+    assert.equal(called, 15)
   } finally { server.closeAllConnections(); await new Promise(resolve=>server.close(resolve)) }
 })

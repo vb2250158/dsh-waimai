@@ -1305,7 +1305,8 @@ test('H5 card connects private verification, clears the payment password and rec
     if (method === 'paymentStatus') return ok({ accountId: profile.id, paymentStatus: paid ? 'paid' : 'requires-verification',
       orderRef: accountRef, officialOrders })
     if (method === 'paymentH5Start') return ok({ h5Ref, state: 'requires-verification', submitted: false })
-    if (method === 'paymentH5Authenticate') return ok({ h5Ref, state: payload.operation === 'connect' ? 'ready' : 'verifying', submitted: false })
+    if (method === 'paymentH5Authenticate') return ok({ h5Ref, state: payload.operation === 'sms' ? 'ready' : 'verifying', submitted: false,
+      ...(payload.operation === 'sms' ? {} : { loginInput: payload.operation === 'phone' ? { kind: 'sms', codeLength: 4 } : { kind: 'phone' } }) })
     if (method === 'paymentH5Submit') {
       submits++
       if (!payload.password) return ok({ state: 'requires-password', submitted: false })
@@ -1319,12 +1320,15 @@ test('H5 card connects private verification, clears the payment password and rec
       status: 'created', orderIds: ['123'], paymentUrl: null, paymentStatus: 'requires-verification' }] }) })
   try {
     const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
-    const labels = () => root.findAllByType('button').map(node => text(node.props.children)).filter(value => value.includes('H5') || value.includes('后台') || value.includes('支付宝登录'))
+    const labels = () => root.findAll(node => node.type === 'section' && node.props['aria-label'] === 'H5 后台付款')[0].findAllByType('button').map(node => text(node.props.children))
     states.push(labels())
     await act(async () => button('连接 H5 收银台').props.onClick())
-    await act(async () => button('打开支付宝登录验证').props.onClick())
     states.push(labels())
-    await act(async () => button('已验证，连接后台').props.onClick())
+    await act(async () => root.findAll(node => node.type === 'span' && node.props['aria-label'] === '支付宝手机号')[0].props.onChange({ target: { value: '13800000000' } }))
+    await act(async () => button('下一步').props.onClick())
+    states.push(labels())
+    await act(async () => root.findAll(node => node.type === 'span' && node.props['aria-label'] === '支付宝短信验证码')[0].props.onChange({ target: { value: '1234' } }))
+    await act(async () => button('验证并连接').props.onClick())
     states.push(labels())
     await act(async () => button('确认后台付款 · ¥21.00').props.onClick())
     const input = root.findAll(node => node.type === 'span' && node.props.type === 'password')[0]
@@ -1482,14 +1486,15 @@ test('payment settings sign in to the selected pending order without creating or
   const record = { orderRef, orderIds: ['123'], status: 'created', merchant: '验收商店', amountCents: 4690 }
   const officialOrders = [{ id: '123', status: '等待支付' }]
   const rpc = { async call(_channel, method, payload) {
-    calls.push({ method, payload })
+    calls.push({ method, payload: structuredClone(payload) })
     if (method === 'accountsList') return ok({ viewAccountRef: ref, accounts: [{ ref, nickname: '验收账号' }] })
     if (method === 'paymentCredential') return ok({ configured: true, writable: true })
     if (method === 'tradeHistory') return ok({ accountId: profile.id, attempts: [record] })
     if (method === 'orders') return ok({ accountId: profile.id, orders: officialOrders })
     if (method === 'paymentStatus') return ok({ accountId: profile.id, orderRef, paymentStatus: 'requires-verification', officialOrders })
     if (method === 'paymentH5Start') return ok({ h5Ref: ref, state: 'requires-verification', verificationRequired: true, submitted: false })
-    if (method === 'paymentH5Authenticate') return ok({ h5Ref: ref, state: payload.operation === 'connect' ? 'ready' : 'verifying', submitted: false })
+    if (method === 'paymentH5Authenticate') return ok({ h5Ref: ref, state: payload.operation === 'sms' ? 'ready' : 'verifying', submitted: false,
+      ...(payload.operation === 'sms' ? {} : { loginInput: payload.operation === 'phone' ? { kind: 'sms', codeLength: 6 } : { kind: 'phone' } }) })
     return method === 'profile' ? ok(profile) : ok({ authenticated: true, state: 'logged-in' })
   } }
   const mounted = await mount(rpc, { trade: (method, payload) => rpc.call('/waimai-login', method, payload) })
@@ -1502,8 +1507,12 @@ test('payment settings sign in to the selected pending order without creating or
     states.push({ action: text(button('登录支付宝').props.children), amount: '¥46.90' })
     await act(async () => button('登录支付宝').props.onClick())
     assert.equal(calls.find(x => x.method === 'paymentH5Start').payload.verificationOnly, true)
-    assert.equal(calls.filter(x => x.method === 'paymentH5Authenticate' && x.payload.operation === 'open').length, 1)
-    await act(async () => button('已验证，连接后台').props.onClick())
+    assert.equal(calls.filter(x => x.method === 'paymentH5Authenticate' && x.payload.operation === 'open').length, 0)
+    assert.equal(calls.filter(x => x.method === 'paymentH5Authenticate' && x.payload.operation === 'inline').length, 1)
+    await act(async () => root.findAll(node => node.type === 'span' && node.props['aria-label'] === '支付宝手机号')[0].props.onChange({ target: { value: '13800000000' } }))
+    await act(async () => button('下一步').props.onClick())
+    await act(async () => root.findAll(node => node.type === 'span' && node.props['aria-label'] === '支付宝短信验证码')[0].props.onChange({ target: { value: '654321' } }))
+    await act(async () => button('验证并连接').props.onClick())
     assert(text(mounted.renderer.toJSON()).includes('此订单的支付宝登录验证已完成'))
     assert(!root.findAllByType('button').some(node => /确认后台付款|使用已保存的支付密码/.test(text(node.props.children))))
     assert(!calls.some(x => ['submit', 'paymentPay', 'paymentH5Submit'].includes(x.method)))
@@ -1559,5 +1568,141 @@ test('settings login retains initialization errors instead of opening a window a
     await act(async () => button('登录支付宝').props.onClick())
     assert(text(mounted.renderer.toJSON()).includes('支付宝返回业务错误'))
     assert.equal(calls.filter(x => x === 'paymentH5Authenticate').length, 0)
+  } finally { mounted.close() }
+})
+
+async function mountInlineSettings(authenticate, options = {}) {
+  const first = '11111111-1111-4111-8111-111111111111', second = '22222222-2222-4222-8222-222222222222'
+  const calls = [], record = { orderRef: first, orderIds: ['123'], status: 'created', merchant: '示例验证店', amountCents: 4690 }
+  const officialOrders = [{ id: '123', status: '等待支付' }]
+  const rpc = { async call(channel, method, payload) {
+    calls.push({ channel, method, payload: structuredClone(payload) })
+    if (method === 'accountsList') return ok({ viewAccountRef: first, accounts: [{ ref: first, nickname: '第一账号' }, { ref: second, nickname: '第二账号' }] })
+    if (method === 'paymentCredential') return ok({ configured: true, writable: true })
+    if (method === 'tradeHistory') return ok({ accountId: profile.id, attempts: [record] })
+    if (method === 'orders') return ok({ accountId: profile.id, orders: officialOrders })
+    if (method === 'paymentStatus') return ok({ accountId: profile.id, orderRef: first, paymentStatus: 'requires-verification', officialOrders })
+    if (method === 'paymentH5Start') return ok({ h5Ref: first, state: 'requires-verification', verificationRequired: true, submitted: false })
+    if (method === 'paymentH5Authenticate') return authenticate(payload)
+    return method === 'profile' ? ok(profile) : ok({ authenticated: true, state: 'logged-in' })
+  } }
+  const mounted = await mount(rpc, { ...options, trade: (method, payload) => rpc.call('/waimai-login', method, payload) })
+  const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
+  const input = label => root.findAll(node => node.type === 'span' && node.props['aria-label'] === label && node.props.onChange)[0]
+  await act(async () => button('支付配置').props.onClick())
+  await act(async () => button('检查待付款订单').props.onClick())
+  await act(async () => button('登录支付宝').props.onClick())
+  return { ...mounted, root, button, input, calls, first, second }
+}
+
+const inlineProgress = loginInput => ok({ h5Ref: '11111111-1111-4111-8111-111111111111', state: 'verifying', submitted: false, verificationRequired: true, loginInput })
+
+test('inline Alipay verification clears inputs before private requests, serializes clicks and only resends when the server enables it', async () => {
+  const phoneResponse = deferred(), storage = [], mutations = []
+  const mounted = await mountInlineSettings(payload => {
+    if (payload.operation === 'inline') return inlineProgress({ kind: 'phone' })
+    if (payload.operation === 'phone') return phoneResponse.promise
+    if (payload.operation === 'refresh') return inlineProgress({ kind: 'sms', codeLength: 4, canResend: true })
+    if (payload.operation === 'resend') return inlineProgress({ kind: 'sms', codeLength: 4, canResend: false })
+    if (payload.operation === 'sms') return ok({ state: 'ready', verificationRequired: false, submitted: false })
+    return inlineProgress({ kind: 'pending' })
+  }, { storage: { getItem: () => null, setItem: (...value) => storage.push(value) }, mutate: async ops => { mutations.push(ops); return true } })
+  try {
+    const { input, button, root, calls, first } = mounted
+    assert.equal(input('支付宝手机号').props.autoComplete, 'off')
+    assert.equal(button('打开官方窗口处理额外验证'), undefined)
+    await act(async () => input('支付宝手机号').props.onChange({ target: { value: '13800000000' } }))
+    await act(async () => { button('下一步').props.onClick(); button('下一步').props.onClick() })
+    assert.equal(input('支付宝手机号').props.value, ''); assert.equal(button('下一步').props.disabled, true)
+    assert.equal(calls.filter(x => x.payload.operation === 'phone').length, 1)
+    await act(async () => phoneResponse.resolve(inlineProgress({ kind: 'sms', codeLength: 4, canResend: false })))
+    assert.equal(input('支付宝短信验证码').props.maxLength, 4)
+    assert.equal(button('重新发送验证码'), undefined)
+    await act(async () => input('支付宝短信验证码').props.onChange({ target: { value: '123456' } }))
+    assert.equal(button('验证并连接').props.disabled, true)
+    await act(async () => button('刷新验证状态').props.onClick())
+    assert.equal(input('支付宝短信验证码').props.value, '')
+    await act(async () => { button('重新发送验证码').props.onClick(); button('重新发送验证码').props.onClick() })
+    assert.equal(calls.filter(x => x.payload.operation === 'resend').length, 1)
+    assert.equal(button('重新发送验证码'), undefined)
+    await act(async () => input('支付宝短信验证码').props.onChange({ target: { value: '1234' } }))
+    const entered = []
+    await act(async () => input('支付宝短信验证码').props.onKeyDown({ key: 'Enter', preventDefault: () => entered.push('prevent'), stopPropagation: () => entered.push('stop') }))
+    assert.deepEqual(entered, ['prevent', 'stop'])
+    assert.equal(input('支付宝短信验证码'), undefined)
+    assert(text(mounted.renderer.toJSON()).includes('此订单的支付宝登录验证已完成'))
+    await act(async () => root.findByType('form').props.onSubmit({ preventDefault() {} }))
+    assert(!JSON.stringify(storage).includes('13800000000')); assert(!JSON.stringify(mutations).includes('13800000000'))
+    assert(!text(mounted.renderer.toJSON()).includes('13800000000'))
+    const authentication = calls.filter(x => x.method === 'paymentH5Authenticate')
+    assert.deepEqual(authentication.map(x => x.payload.operation), ['inline', 'phone', 'refresh', 'resend', 'sms'])
+    assert(authentication.every(x => x.channel === '/waimai-login' && x.payload.accountRef === first && x.payload.orderRef === first))
+    assert.deepEqual(authentication.filter(x => Object.hasOwn(x.payload, 'phone')).map(x => x.payload.operation), ['phone'])
+    assert.deepEqual(authentication.filter(x => Object.hasOwn(x.payload, 'code')).map(x => x.payload.operation), ['sms'])
+    assert(!calls.some(x => ['paymentH5Submit', 'submit', 'paymentPay'].includes(x.method)))
+  } finally { mounted.close() }
+})
+
+test('inline pending and external steps need explicit refresh or a user-opened official window and never claim full verification support', async () => {
+  let state = 'pending'
+  const mounted = await mountInlineSettings(payload => {
+    if (payload.operation === 'refresh' && state === 'ready') return ok({ state: 'ready', verificationRequired: false, submitted: false })
+    return inlineProgress({ kind: state })
+  })
+  try {
+    const { button, calls } = mounted
+    assert(text(mounted.renderer.toJSON()).includes('支付宝验证正在处理中'))
+    assert.equal(calls.filter(x => x.payload.operation === 'open').length, 0)
+    state = 'external'
+    await act(async () => button('刷新验证状态').props.onClick())
+    assert(text(mounted.renderer.toJSON()).includes('当前步骤无法在 DSH 内完成'))
+    assert.equal(calls.filter(x => x.payload.operation === 'open').length, 0)
+    await act(async () => button('打开官方窗口处理额外验证').props.onClick())
+    assert.equal(calls.filter(x => x.payload.operation === 'open').length, 1)
+    state = 'ready'
+    await act(async () => button('刷新验证状态').props.onClick())
+    assert(text(mounted.renderer.toJSON()).includes('此订单的支付宝登录验证已完成'))
+    assert(!mounted.root.findAllByType('button').some(node => /确认后台付款|使用已保存的支付密码/.test(text(node.props.children))))
+  } finally { mounted.close() }
+})
+
+test('inline authentication failures never echo inputs or resend them, and unknown SMS lengths cannot be guessed', async () => {
+  const mounted = await mountInlineSettings(payload => {
+    if (payload.operation === 'phone') return { ok: false, error: { message: 'private phone 13800000000 and code 1234' } }
+    if (payload.operation === 'refresh') return inlineProgress({ kind: 'sms' })
+    return inlineProgress({ kind: 'phone' })
+  })
+  try {
+    const { input, button, calls } = mounted
+    await act(async () => input('支付宝手机号').props.onChange({ target: { value: '13800000000' } }))
+    await act(async () => button('下一步').props.onClick())
+    assert.equal(input('支付宝手机号').props.value, '')
+    assert(text(mounted.renderer.toJSON()).includes('手机号和验证码已清空，不会自动重发'))
+    assert(!text(mounted.renderer.toJSON()).includes('13800000000'))
+    assert.equal(calls.filter(x => x.payload.operation === 'phone').length, 1)
+    await act(async () => button('刷新验证状态').props.onClick())
+    assert.equal(input('支付宝短信验证码'), undefined)
+    assert.equal(button('验证并连接'), undefined)
+    assert.equal(button('重新发送验证码'), undefined)
+    assert(text(mounted.renderer.toJSON()).includes('支付宝验证正在处理中'))
+  } finally { mounted.close() }
+})
+
+test('switching payment accounts discards a delayed inline phone response and cancels only the old account session', async () => {
+  const delayed = deferred()
+  const mounted = await mountInlineSettings(payload => payload.operation === 'phone' ? delayed.promise : inlineProgress({ kind: 'phone' }))
+  try {
+    const { input, button, root, first, second, calls } = mounted
+    await act(async () => input('支付宝手机号').props.onChange({ target: { value: '13800000000' } }))
+    await act(async () => button('下一步').props.onClick())
+    const selector = root.findAll(node => node.type === 'span' && node.props.className === 'waimai-choice' && node.props.selectedId === first)[0]
+    await act(async () => selector.props.onSelect(second))
+    await act(async () => delayed.resolve(inlineProgress({ kind: 'sms', codeLength: 6 })))
+    assert.equal(input('支付宝短信验证码'), undefined)
+    assert.equal(input('支付宝手机号'), undefined)
+    assert(text(mounted.renderer.toJSON()).includes('尚未检查支付宝验证入口'))
+    const cancelled = calls.filter(x => x.method === 'paymentH5Authenticate' && x.payload.operation === 'cancel')
+    assert.equal(cancelled.length, 1); assert.equal(cancelled[0].payload.accountRef, first)
+    assert(!calls.some(x => x.method === 'paymentH5Authenticate' && x.payload.accountRef === second))
   } finally { mounted.close() }
 })

@@ -701,3 +701,22 @@ test('H5 preview cannot create an intent or submit a payment', async () => {
     assert.equal(f.calls.length, 0)
   } finally { await f.dispose() }
 })
+
+test('inline login forwards only the owned current step and cannot resume payment before verification', async () => {
+  const f = await fixture(), h5Ref = '22222222-2222-4222-8222-222222222222', inputs = []
+  f.cashier.h5Sessions.set(orderRef, { ref: h5Ref, accountId: 'owner', client: { submitted: false, close: async () => {} },
+    verification: { input: async args => { inputs.push({ operation: args.operation, phoneLength: args.phone?.length })
+      return { kind: 'sms', codeLength: 6, canResend: false } },
+    snapshot: async () => assert.fail('unverified input must not import a payment session'), close: async () => {} } })
+  try {
+    await assert.rejects(f.cashier.h5Authenticate({ orderRef, h5Ref, operation: 'refresh', phone: '13000000000' }), { code: 'h5-login-input-invalid' })
+    await assert.rejects(f.cashier.h5Authenticate({ orderRef, h5Ref: orderRef, operation: 'phone', phone: '13000000000' }), { code: 'h5-session-expired' })
+    assert.equal(inputs.length, 0)
+    const result = await f.cashier.h5Authenticate({ orderRef, h5Ref, operation: 'phone', phone: '13000000000' })
+    assert.deepEqual(inputs, [{ operation: 'phone', phoneLength: 11 }])
+    assert.deepEqual(result, { orderRef, h5Ref, state: 'verifying', verificationRequired: true, submitted: false,
+      loginInput: { kind: 'sms', codeLength: 6, canResend: false } })
+    assert.equal(f.calls.filter(call => call.api === 'submit').length, 0)
+    assert(!JSON.stringify({ result, logs: f.logs }).includes('13000000000'))
+  } finally { await f.cashier.close(); await f.dispose() }
+})
