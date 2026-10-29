@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.35
+
+- Return bounded private diagnostics for unsupported inline Alipay login steps, preserving the first observed cause. Distinguish request, response and presentation failures without exposing response text, credentials or URLs. Existing request-admission rules are unchanged.
+
 ## 0.8.34
 
 - Add explicit payment-method listing and selection to payment settings after Alipay verification. Keep funding choices private to the current cashier session and separate from payment submission.

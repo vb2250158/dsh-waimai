@@ -50,7 +50,7 @@ test('verification cleans up partial launches and never exposes raw browser erro
 
 async function inlineFixture() {
   let handler, currentUrl = entry, rendered = Promise.resolve()
-  const locator = { filter() { return this }, count: async () => 1, isEnabled: async () => true,
+  const locator = { filter() { return this }, first() { return this }, count: async () => 1, isEnabled: async () => true,
     waitFor: async () => rendered }
   const page = { isClosed: () => false, url: () => currentUrl, locator: () => locator,
     getByPlaceholder: () => locator, waitForURL: async predicate => { await rendered; assert(predicate(new URL(currentUrl))) },
@@ -61,8 +61,8 @@ async function inlineFixture() {
   async function dispatch(action, data, options = {}) {
     const events = []
     await handler({ request: () => ({ url: () => 'https://maliprod.alipay.com/wapcashier/api/' + action + '.json' }),
-      fetch: async () => { events.push('fetch'); await options.fetching; return {
-        json: async () => data, dispose: async () => { events.push('dispose') },
+      fetch: async () => { events.push('fetch'); if (options.fetchError) throw options.fetchError; await options.fetching; return {
+        json: async () => { if (options.jsonError) throw options.jsonError; return data }, dispose: async () => { events.push('dispose') },
       } },
       fulfill: async () => { events.push('fulfill'); options.fulfilled?.() },
       abort: async () => { events.push('abort') },
@@ -96,10 +96,77 @@ test('inline verification rejects unknown, redirect and agreement responses befo
   ]) {
     const f = await inlineFixture()
     assert.deepEqual(await f.dispatch('refresh', raw), ['fetch', 'abort', 'dispose'])
-    assert.deepEqual(await f.browser.input({ operation: 'refresh' }), { kind: 'external' })
+    assert.equal((await f.browser.input({ operation: 'refresh' })).kind, 'external')
     assert.deepEqual(await f.dispatch('accountLogin', {}), ['abort'])
     await f.browser.close()
   }
+})
+
+test('automatic login transitions are diagnosed and remain blocked before any request', async () => {
+  for (const action of ['toUnifiedLogin', 'accountLogin', 'toAccountLogin', 'testOnlyPrivateAction']) {
+    const f = await inlineFixture()
+    assert.deepEqual(await f.dispatch(action, {}), ['abort'])
+    if (action === 'testOnlyPrivateAction') {
+      assert.equal((await f.browser.input({ operation: 'refresh' })).kind, 'phone')
+      f.browser.form.requireExternal('presentation-timeout')
+    }
+    const result = await f.browser.input({ operation: 'refresh' })
+    assert.equal(result.kind, 'external')
+    assert.equal(result.diagnostic.reason, action === 'testOnlyPrivateAction' ? 'unsupported-request' : 'unexpected-write')
+    assert.equal(result.diagnostic.action, action === 'testOnlyPrivateAction' ? 'other' : action)
+    assert(!JSON.stringify(result).includes('testOnlyPrivateAction'))
+    await f.browser.close()
+  }
+})
+
+test('empty provider windows and unsupported response steps have separate redacted evidence', async () => {
+  for (const [raw, flag, reason] of [
+    [{ success: true, wnd: {}, data: { controlType: 'unified_login' } }, 'topWindowEmpty', 'provider-confirmation'],
+    [{ success: true, data: { controlType: 'unified_login', wnd: {} } }, 'dataWindowEmpty', 'provider-confirmation'],
+    [{ success: true, data: { controlType: 'test-only-private', bizData: { account: 'test-only-private' } } }, null, 'unsupported-step'],
+  ]) {
+    const f = await inlineFixture()
+    assert.deepEqual(await f.dispatch('refresh', raw), ['fetch', 'abort', 'dispose'])
+    const result = await f.browser.input({ operation: 'refresh' })
+    assert.equal(result.diagnostic.reason, reason)
+    assert.equal(result.diagnostic.action, 'refresh')
+    if (flag) assert.equal(result.diagnostic.flags[flag], true)
+    else assert.equal(result.diagnostic.step, 'other')
+    assert(!JSON.stringify(result).includes('test-only-private'))
+    await f.browser.close()
+  }
+})
+
+test('transport, JSON, presentation mismatch and presentation timeout do not share one diagnosis', async () => {
+  for (const failure of ['fetch', 'json', 'presentation', 'timeout']) {
+    const f = await inlineFixture(), error = new Error('test-only-private-error')
+    const options = {}
+    if (failure === 'fetch') options.fetchError = error
+    else if (failure === 'json') options.jsonError = error
+    else {
+      if (failure === 'timeout') error.name = 'TimeoutError'
+      const rendering = Promise.reject(error); rendering.catch(() => {})
+      f.render(rendering)
+    }
+    await f.dispatch('refresh', { success: true, data: { controlType: 'unified_login' } }, options)
+    const result = await f.browser.input({ operation: 'refresh' })
+    assert.equal(result.diagnostic.reason, { fetch: 'response-unavailable', json: 'response-invalid',
+      presentation: 'presentation-mismatch', timeout: 'presentation-timeout' }[failure])
+    assert(!JSON.stringify(result).includes('test-only-private-error'))
+    await f.browser.close()
+  }
+})
+
+test('channel filtering produces a diagnostic even without an explicit requireExternal call', async () => {
+  const f = await inlineFixture()
+  await f.dispatch('refresh', { success: true, data: { controlType: 'unified_login', bizData: {
+    h5RegisterBindPay: true, channelInfoMap: { balanceChannel: [{ value: 'test-only-private', name: 'test-only-private', action: '/cashierPay' }] },
+  } } })
+  const result = await f.browser.input({ operation: 'refresh' })
+  assert.equal(result.kind, 'external'); assert.equal(result.diagnostic.reason, 'no-eligible-channel')
+  assert.equal(result.diagnostic.step, 'channel'); assert.equal(result.diagnostic.flags.hasChannelMap, true)
+  assert(!JSON.stringify(result).includes('test-only-private'))
+  await f.browser.close()
 })
 
 test('inline verification blocks unsolicited login and payment and survives close during fetch', async () => {

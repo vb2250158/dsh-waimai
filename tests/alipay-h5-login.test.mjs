@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { H5InlineLogin, loginInput } from '../lib/alipay-h5-login.js'
+import { H5InlineLogin, loginInput, loginDiagnostic } from '../lib/alipay-h5-login.js'
 
 function fixture(timeoutMs = 50) {
   const calls = [], controls = { count: 1, enabled: true }
@@ -21,9 +21,9 @@ test('provider data projects only phone, exact SMS length or an external step', 
   assert.equal(loginInput({ controlType: 'need_loginsms_verify', bizData: {} }).codeLength, 6)
   assert.equal(loginInput({ controlType: 'cashier_pre_confirm', bizData: {} }), null)
   for (const bizData of [{ registering: true }, { h5AutoRegisterQuser: true }, { protocols: [{}] }, { protocolName: 'private' }, { pwdValidateType: 'openService' }]) {
-    assert.deepEqual(loginInput({ controlType: 'unified_login', bizData }), { kind: 'external' })
+    assert.equal(loginInput({ controlType: 'unified_login', bizData }).kind, 'external')
   }
-  assert.deepEqual(loginInput({ controlType: 'unknown' }), { kind: 'external' })
+  assert.equal(loginInput({ controlType: 'unknown' }).diagnostic.reason, 'unsupported-step')
 })
 
 test('register-bind page exposes only inspected action-free channels before the hidden phone panel', () => {
@@ -32,10 +32,12 @@ test('register-bind page exposes only inspected action-free channels before the 
   assert.deepEqual(loginInput(data), { kind: 'channel' })
   for (const extra of [{ action: '/cashierPay' }, { disable: true }, { registering: true }, { protocols: [{}] },
     { pwdValidateType: 'newCard' }, { params: { pwdValidateType: 'openService' } }]) {
-    assert.deepEqual(loginInput({ ...data, bizData: { ...data.bizData, channelInfoMap: { balanceChannel: [{ ...channel, ...extra }] } } }), { kind: 'external' })
+    const result = loginInput({ ...data, bizData: { ...data.bizData, channelInfoMap: { balanceChannel: [{ ...channel, ...extra }] } } })
+    assert.equal(result.kind, 'external'); assert.equal(result.diagnostic.reason, 'no-eligible-channel')
+    assert.equal(result.diagnostic.flags.hasChannelMap, true); assert.equal(result.diagnostic.flags.hasEligibleChannel, false)
   }
-  assert.deepEqual(loginInput({ ...data, bizData: { ...data.bizData, groups: [{ groupCode: 'unknown' }] } }), { kind: 'external' })
-  assert.deepEqual(loginInput({ ...data, bizData: { ...data.bizData, protocols: [{}] } }), { kind: 'external' })
+  assert.equal(loginInput({ ...data, bizData: { ...data.bizData, groups: [{ groupCode: 'unknown' }] } }).diagnostic.reason, 'no-eligible-channel')
+  assert.equal(loginInput({ ...data, bizData: { ...data.bizData, protocols: [{}] } }).diagnostic.reason, 'provider-confirmation')
 })
 
 test('phone dispatch clicks the official button once; SMS fills once without a second submit', async () => {
@@ -80,11 +82,39 @@ test('unknown login result does not resend; unrelated polling cannot release the
   const f = fixture(5)
   f.form.observe({ controlType: 'unified_login', bizData: {} })
   f.respond(async () => f.form.observe({ controlType: 'unified_login' }, 'cashierPayResultQuery'))
-  assert.deepEqual(await f.form.submit({ operation: 'phone', phone: '13000000000' }), { kind: 'external' })
+  const result = await f.form.submit({ operation: 'phone', phone: '13000000000' })
+  assert.equal(result.kind, 'external'); assert.equal(result.diagnostic.reason, 'input-timeout')
   await assert.rejects(f.form.submit({ operation: 'phone', phone: '13000000000' }), { code: 'h5-login-pending' })
   assert.equal(f.calls.filter(x => x.type === 'click').length, 1)
   f.form.observe({ controlType: 'need_loginsms_verify', bizData: {} }, 'unifiedLogin')
   assert.equal((await f.form.describe()).kind, 'sms')
+})
+
+test('diagnostic projection retains no raw strings and unknown values become fixed other enums', () => {
+  const secret = 'test-only-private-material'
+  const raw = { success: true, needRedirect: secret, wnd: {}, data: { controlType: secret, wnd: { text: secret },
+    bizData: { protocolName: secret, account: secret, channelInfoMap: { balanceChannel: [{ value: secret, name: secret, action: secret }] } } } }
+  const result = loginDiagnostic(secret, { action: secret, raw })
+  assert.equal(result.reason, 'other'); assert.equal(result.action, 'other'); assert.equal(result.step, 'other')
+  assert.equal(result.flags.topWindow, true); assert.equal(result.flags.topWindowEmpty, true)
+  assert.equal(result.flags.dataWindow, true); assert.equal(result.flags.dataWindowEmpty, false)
+  assert(Object.values(result.flags).every(value => typeof value === 'boolean'))
+  assert.equal(JSON.stringify(result).includes(secret), false)
+})
+
+test('first external cause survives later timeout and is cleared on a successful new step or disposal', async () => {
+  const f = fixture()
+  f.form.observe({ controlType: 'unified_login' })
+  f.form.requireExternal('unexpected-write', { action: 'toUnifiedLogin' })
+  f.form.requireExternal('presentation-timeout', { data: { controlType: 'test-only-private' } })
+  const result = await f.form.describe()
+  assert.equal(result.diagnostic.reason, 'unexpected-write'); assert.equal(result.diagnostic.action, 'toUnifiedLogin')
+  assert(!JSON.stringify(result).includes('test-only-private'))
+  f.form.observe({ controlType: 'need_loginsms_verify' }, 'smsValidateLogin')
+  assert.equal(f.form.diagnostic, null); assert.equal((await f.form.describe()).kind, 'sms')
+  f.page.url = () => 'https://example.test/test-only-private'
+  assert.equal((await f.form.describe()).diagnostic.reason, 'origin-changed')
+  f.form.close(); assert.equal(f.form.diagnostic, null)
 })
 
 test('business rejection permits explicit correction but never exposes provider text', async () => {
