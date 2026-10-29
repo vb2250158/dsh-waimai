@@ -138,8 +138,35 @@ test('diagnostic projection retains no raw strings and unknown values become fix
   assert.equal(result.reason, 'other'); assert.equal(result.action, 'other'); assert.equal(result.step, 'other')
   assert.equal(result.flags.topWindow, true); assert.equal(result.flags.topWindowEmpty, true)
   assert.equal(result.flags.dataWindow, true); assert.equal(result.flags.dataWindowEmpty, false)
+  assert.equal(result.flags.namedProtocol, true); assert.equal(result.agreementCheck, 'none')
   assert(Object.values(result.flags).every(value => typeof value === 'boolean'))
   assert.equal(JSON.stringify(result).includes(secret), false)
+})
+
+test('agreement rejection diagnostics identify the failing field without exposing its value', () => {
+  const page = { controlType: 'unified_login', bizData: { h5RegisterBindPay: true } }
+  const publicUrl = 'https://render.alipay.com/p/f/test.html?agreementId=AG00000011'
+  const cases = [
+    [{ name: '', url: publicUrl }, 'invalid-name'],
+    [{ name: 'test', url: null }, 'invalid-url'],
+    [{ name: 'test', url: 'http://render.alipay.com/p/test' }, 'non-https'],
+    [{ name: 'test', url: 'https://example.test/p/private' }, 'unsupported-host'],
+    [{ name: 'test', url: 'https://private@render.alipay.com/p/test' }, 'url-authority'],
+    [{ name: 'test', url: 'https://render.alipay.com/private' }, 'unsupported-path'],
+    [{ name: 'test', url: publicUrl + '#private' }, 'url-fragment'],
+    [{ name: 'test', url: publicUrl + '&private=hidden' }, 'unsupported-query'],
+    [{ name: 'test', url: publicUrl.replace('AG00000011', 'private') }, 'invalid-agreement-id'],
+    [{ name: 'test', url: publicUrl }, 'accepted'],
+  ]
+  for (const [protocol, expected] of cases) {
+    const data = { ...page, bizData: { ...page.bizData, protocols: [protocol] } }
+    const diagnostic = loginDiagnostic('provider-confirmation', { data })
+    assert.equal(diagnostic.agreementCheck, expected)
+    assert.equal(JSON.stringify(diagnostic).includes('private'), false)
+    assert.equal(loginAgreements(data) !== null, expected === 'accepted')
+  }
+  assert.equal(loginDiagnostic('provider-confirmation', { data: { ...page, bizData: { protocols: [{}] } } }).agreementCheck, 'unsupported-page')
+  assert.equal(loginDiagnostic('provider-confirmation', { data: { ...page, bizData: { ...page.bizData, protocols: {} } } }).agreementCheck, 'invalid-list')
 })
 
 test('first external cause survives later timeout and is cleared on a successful new step or disposal', async () => {

@@ -1,6 +1,6 @@
 # dsh-waimai
 
-Private inline-login diagnostics distinguish requests without an explicit action, unsupported steps, additional confirmation, missing eligible channels, response failures and form presentation failures. Diagnostics contain fixed categories and boolean flags only, without raw responses, errors, URLs or identity data. Request admission rules remain unchanged.
+Private inline-login diagnostics distinguish requests without an explicit action, unsupported steps, additional confirmation, missing eligible channels, response failures and form presentation failures. Agreement diagnostics distinguish list, name, URL, host, path, query and agreement-ID failures, and separately flag a named protocol. Diagnostics contain fixed categories and boolean flags only, without raw responses, errors, URLs or identity data. Request admission rules remain unchanged.
 
 After Alipay verification, payment settings show the current cashier’s payment methods. Users explicitly refresh the available choices and select one; the UI shows the backend-confirmed selection without paying. Only returned methods requiring no enrollment, card binding or additional agreement are selectable. Session references distinguish identically named cards. An unconfirmed selection blocks payment; refreshing reads back the result without selecting again. References are not persisted as default cards across orders. The payment password and spending limits remain shared settings. Live payment acceptance remains incomplete.
 

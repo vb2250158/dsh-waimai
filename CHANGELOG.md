@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.37
+
+- Distinguish agreement-list, name, URL, host, path, query and agreement-ID failures in private login diagnostics. Report only fixed categories and a separate named-protocol flag; agreement admission and consent requirements are unchanged.
+
 ## 0.8.36
 
 - Show recognized Alipay login agreements in payment settings with explicit, initially unchecked consent before phone submission. Consent expires when the order, login session or provider step changes.
