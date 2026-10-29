@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.33
+
+- Display official Alipay login-channel choices in payment settings before phone and SMS input. Handle the initially selected entry without waiting for an invisible phone form.
+- Keep channel references ephemeral and private; reject stale entries, registration and agreement actions. Selecting a login entry permits no payment or other network write. Actual funding-source configuration and live payment acceptance remain incomplete.
+
 ## 0.8.32
 
 - Store the Alipay payment password independently from shopping channels and local account references. Reconnecting a shopping account no longer requires setting the same password again.

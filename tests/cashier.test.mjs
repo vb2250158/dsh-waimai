@@ -710,12 +710,17 @@ test('inline login forwards only the owned current step and cannot resume paymen
     snapshot: async () => assert.fail('unverified input must not import a payment session'), close: async () => {} } })
   try {
     await assert.rejects(f.cashier.h5Authenticate({ orderRef, h5Ref, operation: 'refresh', phone: '13000000000' }), { code: 'h5-login-input-invalid' })
+    await assert.rejects(f.cashier.h5Authenticate({ orderRef, h5Ref, operation: 'channel' }), { code: 'h5-login-input-invalid' })
+    await assert.rejects(f.cashier.h5Authenticate({ orderRef, h5Ref, operation: 'refresh', channelRef: h5Ref }), { code: 'h5-login-input-invalid' })
+    await assert.rejects(f.cashier.h5Authenticate({ orderRef, h5Ref, operation: 'channel', channelRef: h5Ref, phone: '13000000000' }), { code: 'h5-login-input-invalid' })
     await assert.rejects(f.cashier.h5Authenticate({ orderRef, h5Ref: orderRef, operation: 'phone', phone: '13000000000' }), { code: 'h5-session-expired' })
     assert.equal(inputs.length, 0)
     const result = await f.cashier.h5Authenticate({ orderRef, h5Ref, operation: 'phone', phone: '13000000000' })
     assert.deepEqual(inputs, [{ operation: 'phone', phoneLength: 11 }])
     assert.deepEqual(result, { orderRef, h5Ref, state: 'verifying', verificationRequired: true, submitted: false,
       loginInput: { kind: 'sms', codeLength: 6, canResend: false } })
+    const selected = await f.cashier.h5Authenticate({ orderRef, h5Ref, operation: 'channel', channelRef: h5Ref })
+    assert.equal(inputs[1].operation, 'channel'); assert.equal(selected.submitted, false)
     assert.equal(f.calls.filter(call => call.api === 'submit').length, 0)
     assert(!JSON.stringify({ result, logs: f.logs }).includes('13000000000'))
   } finally { await f.cashier.close(); await f.dispose() }

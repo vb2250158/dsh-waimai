@@ -26,6 +26,18 @@ test('provider data projects only phone, exact SMS length or an external step', 
   assert.deepEqual(loginInput({ controlType: 'unknown' }), { kind: 'external' })
 })
 
+test('register-bind page exposes only inspected action-free channels before the hidden phone panel', () => {
+  const channel = { value: 'test-balance', name: '测试余额' }
+  const data = { controlType: 'unified_login', bizData: { h5RegisterBindPay: true, channelInfoMap: { balanceChannel: [channel] } } }
+  assert.deepEqual(loginInput(data), { kind: 'channel' })
+  for (const extra of [{ action: '/cashierPay' }, { disable: true }, { registering: true }, { protocols: [{}] },
+    { pwdValidateType: 'newCard' }, { params: { pwdValidateType: 'openService' } }]) {
+    assert.deepEqual(loginInput({ ...data, bizData: { ...data.bizData, channelInfoMap: { balanceChannel: [{ ...channel, ...extra }] } } }), { kind: 'external' })
+  }
+  assert.deepEqual(loginInput({ ...data, bizData: { ...data.bizData, groups: [{ groupCode: 'unknown' }] } }), { kind: 'external' })
+  assert.deepEqual(loginInput({ ...data, bizData: { ...data.bizData, protocols: [{}] } }), { kind: 'external' })
+})
+
 test('phone dispatch clicks the official button once; SMS fills once without a second submit', async () => {
   const f = fixture()
   f.form.observe({ controlType: 'unified_login', bizData: {} }, 'refresh')

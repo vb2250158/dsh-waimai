@@ -1747,3 +1747,55 @@ test('switching payment accounts discards a delayed inline phone response and ca
     assert(!calls.some(x => x.method === 'paymentH5Authenticate' && x.payload.accountRef === second))
   } finally { mounted.close() }
 })
+
+test('Alipay login channels require explicit selection, serialize requests and never persist channel references or submit payment', async () => {
+  const delayed = deferred(), storage = [], mutations = []
+  const channelRef = 'temporary-login-channel', label = '<b>支付宝手机号登录</b>'
+  const mounted = await mountInlineSettings(payload => payload.operation === 'channel' ? delayed.promise
+    : inlineProgress({ kind: 'channel', channels: [{ channelRef, label, disabled: false }, { channelRef: 'unavailable-channel', label: '不可用入口', disabled: true }] }),
+  { storage: { getItem: () => null, setItem: (...value) => storage.push(value) }, mutate: async ops => { mutations.push(ops); return true } })
+  try {
+    const { button, input, calls, root, first } = mounted
+    assert(text(mounted.renderer.toJSON()).includes('选择支付宝登录方式'))
+    assert(text(mounted.renderer.toJSON()).includes('登录后再确认实际付款方式'))
+    assert.equal(button(label).props.children, label)
+    assert.equal(button('不可用入口').props.disabled, true)
+    assert.deepEqual(calls.filter(x => x.method === 'paymentH5Authenticate').map(x => x.payload.operation), ['inline'])
+    assert.equal(button('打开官方窗口处理额外验证'), undefined)
+    await act(async () => button('不可用入口').props.onClick())
+    assert.equal(calls.filter(x => x.payload.operation === 'channel').length, 0)
+    await act(async () => { button(label).props.onClick(); button(label).props.onClick() })
+    assert.equal(button(label).props.disabled, true)
+    const selection = calls.filter(x => x.payload.operation === 'channel')
+    assert.equal(selection.length, 1)
+    assert.deepEqual(selection[0].payload, { platformId: 'taobao', accountRef: first, orderRef: first, h5Ref: first, operation: 'channel', channelRef })
+    await act(async () => delayed.resolve(inlineProgress({ kind: 'phone' })))
+    assert(input('支付宝手机号'))
+    assert.equal(button(label), undefined)
+    assert.equal(button('下一步').props.disabled, true)
+    await act(async () => root.findByType('form').props.onSubmit({ preventDefault() {} }))
+    assert(!JSON.stringify(storage).includes(channelRef))
+    assert(!JSON.stringify(mutations).includes(channelRef))
+    assert(!calls.some(x => ['paymentH5Submit', 'submit', 'paymentPay'].includes(x.method)))
+    assert.deepEqual(calls.filter(x => x.method === 'paymentH5Authenticate').map(x => x.payload.operation), ['inline', 'channel'])
+  } finally { mounted.close() }
+})
+
+test('a late login channel selection cannot restore the previous shopping account verification session', async () => {
+  const delayed = deferred()
+  const mounted = await mountInlineSettings(payload => payload.operation === 'channel' ? delayed.promise
+    : inlineProgress({ kind: 'channel', channels: [{ channelRef: 'temporary-channel', label: '手机号登录', disabled: false }] }))
+  try {
+    const { button, input, root, first, second, calls } = mounted
+    await act(async () => button('手机号登录').props.onClick())
+    const selector = root.findAll(node => node.type === 'span' && node.props.className === 'waimai-choice' && node.props.selectedId === first)[0]
+    await act(async () => selector.props.onSelect(second))
+    await act(async () => delayed.resolve(inlineProgress({ kind: 'phone' })))
+    assert.equal(input('支付宝手机号'), undefined)
+    assert(text(mounted.renderer.toJSON()).includes('尚未检查支付宝验证入口'))
+    const cancelled = calls.filter(x => x.method === 'paymentH5Authenticate' && x.payload.operation === 'cancel')
+    assert.equal(cancelled.length, 1)
+    assert.equal(cancelled[0].payload.accountRef, first)
+    assert(!calls.some(x => ['paymentH5Submit', 'submit', 'paymentPay'].includes(x.method)))
+  } finally { mounted.close() }
+})
