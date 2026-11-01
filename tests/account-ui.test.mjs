@@ -1219,7 +1219,7 @@ test('Alipay settings save only payment fields and connection checks use saved c
     assert.equal(root.findByType('form').props.hidden, false)
     assert.equal(button('支付配置').props['aria-pressed'], true)
     assert.deepEqual(root.findByType('nav').findAllByType('button').map(node => text(node.props.children)),
-      ['账号与地址', '点餐', '历史订单', '自动化任务', '支付配置', '点单设置'])
+      ['账号与地址', '点餐', '跨平台搜索', '历史订单', '自动化任务', '支付配置', '点单设置'])
     assert.equal(root.findAllByProps({ 'aria-label': '自动支付白名单' }).length, 0)
     assert(root.findAll(node => node.props.selectedId === 'manual' && node.props.className === 'waimai-choice').length)
     assert.equal(input('报价有效期（秒）').props.min, 30)

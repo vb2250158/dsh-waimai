@@ -4,7 +4,9 @@ import { gzipSync, gunzipSync } from 'node:zlib'
 import { retailAddressLink, retailCartData, retailCheckoutData, RetailTrade } from '../lib/retail-trade.js'
 import { registerAgentOrdering } from '../lib/agent-ordering.js'
 import { z } from 'zod'
-import { readFile } from 'node:fs/promises'
+import { readFile, mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { retailPaymentDestination } from '../lib/trade-data.js'
 import { TaobaoTrade } from '../lib/taobao-trade.js'
 
@@ -42,6 +44,18 @@ test('native quote preserves the server coupon and final total without adding an
   assert.equal(quote.display.totalCents, 4820); assert.equal(quote.display.couponCents, 1100)
   assert.equal(quote.display.items[0].priceCents, 5090)
   assert(JSON.parse(gunzipSync(Buffer.from(quote.request.params, 'base64'))).retail_lmagex_checkout_submitOrder)
+})
+
+test('checkout display binds every item to the verified cart and does not trust a supplied title', () => {
+  const cart = retailCartData(cartRaw(), '201'), raw = quoteRaw()
+  raw.data.retail_lmagex_checkout_shopgoodslist.fields.elemeOrderLineList[0].name = '伪造商品'
+  assert.equal(retailCheckoutData(raw, owner(cart)).display.items[0].name, '示例水 570ml×24')
+  raw.data.retail_lmagex_checkout_shopgoodslist.fields.elemeOrderLineList[0].itemId = '999'
+  assert.throws(() => retailCheckoutData(raw, owner(cart)))
+  const duplicate = quoteRaw(); duplicate.data.retail_lmagex_checkout_shopgoodslist.fields.elemeOrderLineList.push({ itemId: '301', quantity: 1 })
+  assert.throws(() => retailCheckoutData(duplicate, owner(cart)))
+  const unnamed = cartRaw(); delete unnamed.list[0].bundles[0].orders[0].title
+  assert.throws(() => retailCheckoutData(quoteRaw(), owner(retailCartData(unnamed, '201'))))
 })
 
 test('reservation quotes require a selected time and submit the official delivery writeback without UI fields', async () => {
@@ -101,19 +115,21 @@ test('fixed-price discounts retain the cashier total when the coupon component h
   assert.equal(quote.display.couponCents, 0)
 })
 
-test('checkout sends both linked address IDs and stops before build when the selected address is missing', async () => {
-  const calls = [], address = { ref: 'address-ref', nativeId: '601', coordinates: { latitude: 31, longitude: 121 } }
+test('checkout sends both linked address IDs and stops before build when the selected address is missing', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'waimai-retail-checkout-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const calls = [], address = { ref: 'a'.repeat(64), nativeId: '601', coordinates: { latitude: 31, longitude: 121 } }
   let rows = [{ id_string: '601', address_id_string: '701' }]
   const login = { protocol: { checkout: { api: 'build' }, retail: { cart: { api: 'cart' }, addressQuery: { api: 'addresses' }, client: {}, checkoutClient: {} } },
     run: fn => fn(), mtop: async (spec, args) => {
       calls.push({ api: spec.api, args })
       return { data: spec.api === 'cart' ? cartRaw() : spec.api === 'addresses' ? { addressList: rows } : quoteRaw() }
     } }
-  const trade = { login, service: { checkReply: () => {} }, buyer: async () => ({ buyerId: '501' }), verify: async () => {},
+  const trade = { login, journalPath: join(directory, 'trade-attempts.json'), service: { checkReply: () => {} }, buyer: async () => ({ buyerId: '501' }), verify: async () => {},
     quotes: new Map(), pruneQuotes: TaobaoTrade.prototype.pruneQuotes, retainQuote: TaobaoTrade.prototype.retainQuote,
     displayCart: (_context, cart) => cart.display, now: () => 1000, quoteSeconds: 60, capCents: 5000, dryRun: false }
   const retail = new RetailTrade(trade)
-  retail.context = async () => ({ nativeShopId: '201', shopId: 'E201', address, merchant: '示例便利店' })
+  retail.context = async () => ({ accountId: '123', nativeShopId: '201', shopId: 'E201', address, merchant: '示例便利店' })
   const args = { shopId: 'E201', revision: retailCartData(cartRaw(), '201').revision }
   const first = await retail.checkout(args), refreshed = await retail.checkout(args)
   assert.equal(first.totalCents, 4820); assert.equal(refreshed.totalCents, 4820)
@@ -152,9 +168,30 @@ test('retail search supplies a device identity and binds references to the indep
   const result = await retail.search({ shopId: 'E201', keyword: '水' })
   assert.equal(calls[1].args.storeId, '201'); assert(calls[1].args.deviceId)
   assert.equal(result.items[0].simpleSku, true); assert.equal(result.items[0].priceCents, 5090)
-  assert(!JSON.stringify(result).includes('private'))
+  assert.equal(result.addressRef, 'private-address-ref'); assert.equal(result.accountId, 'private-account')
   product.storeModel.storeBasicModel.storeId = '999'
   await assert.rejects(retail.search({ shopId: 'E201', keyword: '水' }), error => error.code === 'retail-item-invalid')
+})
+
+test('catalog resolution requires one native item in the verified store and address', async () => {
+  const context = { accountId: '123', shopId: 'E201', address: { ref: 'a'.repeat(64) } }
+  const item = { itemId: '301', title: '水', startWith: 1, itemStatus: 0, currentPrice: { price: 500 }, stockModel: { quantity: 3 }, itemCustomPropertyModelList: [] }
+  let items = [item], verifies = 0
+  const retail = new RetailTrade({ login: { run: fn => fn() }, service: {}, verify: async () => { verifies++ } })
+  retail.context = async (shopId, addressRef) => {
+    if (shopId !== context.shopId || addressRef !== context.address.ref) throw new Error('owner mismatch')
+    return context
+  }
+  retail.query = async () => items
+  const args = { shopId: context.shopId, addressRef: context.address.ref, keyword: '水', itemId: '301' }
+  const result = await retail.resolveSearch(args)
+  assert.equal(result.accountId, context.accountId); assert.equal(result.addressRef, context.address.ref)
+  assert.equal(result.shopId, context.shopId); assert.equal(result.priceCents, 500); assert(result.productRef)
+  await assert.rejects(retail.resolveSearch({ ...args, itemId: '999' }), { code: 'retail-product-unavailable' })
+  items = [item, item]
+  await assert.rejects(retail.resolveSearch(args), { code: 'retail-product-unavailable' })
+  await assert.rejects(retail.resolveSearch({ ...args, addressRef: 'foreign' }), /owner mismatch/)
+  assert.equal(verifies, 1)
 })
 
 test('agent supermarket checkout enforces the final payable budget and explicit confirmation shares submit', async () => {
@@ -184,12 +221,14 @@ test('supermarket handoffs match the owned order and exclude foreign, duplicate 
   assert.equal(retailPaymentDestination(url.replace('https:', 'http:'), '123'), null)
 })
 
-test('native add rereads inventory, preserves the action identity and never retries an unknown write', async () => {
+test('native add rereads inventory, preserves the action identity and never retries an unknown write', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'waimai-retail-trade-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
   let raw = { list: [] }, unknown = false, writes = 0
   const product = { itemId: '301', title: '示例水 570ml×24', startWith: 1, itemStatus: 0,
     currentPrice: { price: 5090 }, stockModel: { quantity: 3 }, storeModel: { storeBasicModel: { storeId: '201' } }, itemCustomPropertyModelList: [] }
-  const address = { ref: 'address', nativeId: '601', coordinates: { latitude: 31, longitude: 121 } }
-  const login = { accountId: 'account', protocol: { menuHead: { api: 'head' }, retail: { search: { api: 'search' }, cart: { api: 'cart' }, add: { api: 'add' }, client: {} } },
+  const address = { ref: 'a'.repeat(64), nativeId: '601', coordinates: { latitude: 31, longitude: 121 } }
+  const login = { accountId: '123', protocol: { menuHead: { api: 'head' }, retail: { search: { api: 'search' }, cart: { api: 'cart' }, add: { api: 'add' }, client: {} } },
     run: fn => fn(), requireAccount: async () => {}, mtop: async (spec, args, retry) => {
       if (spec.api === 'head') return { data: { resultMap: { storeHead: { storeInfo: { storeId: 'E201', tbRestaurantId: '201', name: '示例便利店' } } } } }
       if (spec.api === 'search') return { data: { data: { skuList: [{ item: product }] } } }
@@ -199,15 +238,15 @@ test('native add rereads inventory, preserves the action identity and never retr
       if (unknown) throw Error('transport interrupted')
       return { data: {} }
     } }
-  const base = { login, service: { selectedAddress: async () => address, checkReply: () => {} }, verify: async () => {}, mutations: new Set(),
-    quotes: new Map([['owned', { context: { accountId: 'account', shopId: 'E201' } }], ['other', { context: { accountId: 'account', shopId: 'E202' } }]]),
+  const base = { login, service: { selectedAddress: async () => address, checkReply: () => {} }, verify: async () => {}, mutations: new Set(), journalPath: join(directory, 'trade-attempts.json'),
+    quotes: new Map([['owned', { context: { accountId: '123', shopId: 'E201' } }], ['other', { context: { accountId: '123', shopId: 'E202' } }]]),
     invalidateQuotes: TaobaoTrade.prototype.invalidateQuotes, displayCart: (context, cart) => cart.display }
   const retail = new RetailTrade(base), found = await retail.search({ shopId: 'E201', keyword: '水' })
-  const args = { productRef: found.items[0].productRef, operationRef: 'operation-1', quantity: 1, revision: retailCartData(raw, '201').revision }
+  const args = { productRef: found.items[0].productRef, operationRef: '11111111-1111-4111-8111-111111111111', quantity: 1, revision: retailCartData(raw, '201').revision }
   product.stockModel.quantity = 0
   await assert.rejects(retail.add(args), error => error.code === 'retail-spec-required'); assert.equal(writes, 0)
   product.stockModel.quantity = 3; unknown = true
-  await assert.rejects(retail.add(args), /transport interrupted/); assert.equal(writes, 1)
+  await assert.rejects(retail.add(args), error => error.code === 'cart-result-unconfirmed'); assert.equal(writes, 1)
   assert(!base.quotes.has('owned')); assert(base.quotes.has('other'))
   await assert.rejects(retail.add({ ...args, revision: retailCartData(raw, '201').revision }), error => error.code === 'cart-duplicate')
   assert.equal(writes, 1); assert.equal((await retail.cart({ shopId: 'E201' })).quantity, 1)

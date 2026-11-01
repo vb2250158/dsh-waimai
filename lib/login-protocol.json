@@ -194,6 +194,16 @@
       "asac": "alscGpdG4bag44EYyJBRPX"
     }
   },
+  "catalogSearch": {
+    "url": "https://waimai-guide.ele.me/h5/mtop.relationrecommend.ElemeTinyAppRecommend.recommend/1.0/",
+    "api": "mtop.relationrecommend.ElemeTinyAppRecommend.recommend",
+    "version": "1.0",
+    "appKey": "12574478",
+    "jsv": "2.7.5",
+    "method": "POST",
+    "query": { "SV": "2.0", "ttid": "h5@Web_iphone_11.22.148" },
+    "headers": { "x-ele-scene": "search" }
+  },
   "retail": {
     "addressQuery": {
       "url": "https://waimai-guide.ele.me/h5/mtop.alsc.personal.address.query/1.0/",
