@@ -1,9 +1,10 @@
 # Changelog
 
-## Unreleased (0.8.39)
+## 0.8.39
 
 - Add a unified product search view for Taobao Instant Commerce and Hema with account-bound results, delivery-group pagination and explicit unavailable platform states. Searches do not place orders or pay.
 - Use the Taobao H5 search endpoint for cross-store results; retain the sponsored-shop preference and report unrecognized cards as partial results.
+- Bind retail cart additions to account, address, revision and operation identity; retain uncertain requests in a recoverable journal and require exact cart reconciliation before continuing.
 
 ## 0.8.38
 
