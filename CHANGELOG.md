@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.40
+
+- Add `mcpNodeExecutable` for selecting a deployment-owned takeaway MCP Node.js executable. Empty retains the Host interpreter; configuration reload and reset use the existing queued MCP lifecycle without changing other processes.
+
 ## 0.8.39
 
 - Add a unified product search view for Taobao Instant Commerce and Hema with account-bound results, delivery-group pagination and explicit unavailable platform states. Searches do not place orders or pay.

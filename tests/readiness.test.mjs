@@ -102,6 +102,8 @@ test('a preview tick persists its claim before notification and does not run twi
 })
 
 test('the Host bridge executes advertised MCP tools and unregisters them on stop', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'waimai-bridge-'))
+  const env = { DSH_HOME: home, HOME: home, USERPROFILE: home }
   const registered = new Map()
   const logger = { info() {}, warn() {} }
   const bridge = new WaimaiMcpBridge({ logger, ctx: { tools: { register(definition) {
@@ -109,7 +111,7 @@ test('the Host bridge executes advertised MCP tools and unregisters them on stop
     return () => registered.delete(definition.name)
   } } } })
   try {
-    await bridge.start({ DRY_RUN: 'true' })
+    await bridge.start({ ...env, DRY_RUN: 'true' })
     assert.equal(bridge.connected, true)
     const direct = await bridge.call('get_status', {})
     assert.equal(direct.success, true)
@@ -135,10 +137,15 @@ test('the Host bridge executes advertised MCP tools and unregisters them on stop
       await tool.execute({}, exec)
       assert.equal(Object.hasOwn(requests[2], '_meta'), false)
     } finally { bridge.client.callTool = callTool }
-    const restart = bridge.restart({ DRY_RUN: 'false' })
+    const restart = bridge.restart({ ...env, DRY_RUN: 'false' })
     const afterSave = await bridge.call('get_status', {})
     await restart
     assert.equal(afterSave.data.dryRun, false)
-  } finally { await bridge.stop() }
+  } finally {
+    try { await bridge.stop() } finally {
+      assert.ok(home.startsWith(join(tmpdir(), 'waimai-bridge-')))
+      await rm(home, { recursive: true, force: true })
+    }
+  }
   assert.equal(registered.size, 0)
 })

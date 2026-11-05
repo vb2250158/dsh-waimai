@@ -178,6 +178,7 @@ dsh plugin --profile web add --save-exact github:vb2250158/dsh-waimai#<40位提�
 
 | 字段 | 默认 | 说明 |
 | --- | --- | --- |
+| `mcpNodeExecutable` | 空 | 外卖 MCP 子进程的 Node.js 可执行文件路径；留空使用宿主的 `process.execPath`，可指定与宿主版本匹配、带外卖名称和图标的独立解释器 |
 | `defaultPlatform` | `taobao` | 默认平台，另可选 `hema`、`meituan`、`jd` |
 | `dryRun` | `true` | 自动任务预览；手动下单仍需明确确认，不自动付款 |
 | `persistLogin` | `true` | 本机 Cookie 持久化；关闭则仅当前子进程有效 |
@@ -197,6 +198,8 @@ dsh plugin --profile web add --save-exact github:vb2250158/dsh-waimai#<40位提�
 | `maxOrderAmount` | `35` | 单笔金额上限，元；任务只能收紧 |
 | `dailyBudget` | `0` | 全局每日上限，元；0 表示无限制 |
 | `autoTasks` | `[]` | 任务列表，当前只支持预览 |
+
+`mcpNodeExecutable` 只选择外卖 MCP 解释器，不修改系统 Node.js、宿主或其它子进程。配置重载沿现有串行队列重启 MCP；正在执行的定时任务结束后再应用最新配置。清空路径会恢复使用宿主解释器。显式路径无法启动时报告 MCP 连接失败，不退回其它解释器。该字段不修改可执行文件的名称或图标；部署者须先提供已设置相应 Windows 资源、版本兼容的 Node.js 可执行文件。
 
 任务包含唯一非空 `id`、`name`、`platformId`、`enabled`、`triggerTime`（本地 `HH:mm`）、`dateRule`（`workday/weekend/everyday/custom`）、`customDays`、`skipDates`、`menuPool`（每行 `店铺 | 菜品 | 参考价格`）、`menuStrategy`（`rotate/random/history`）、金额限制和通知选项。每分钟轮询，仅触发指定分钟，不补跑错过的任务。同一任务每天只触发一次，先保存触发记录再执行预览或失败通知。
 
