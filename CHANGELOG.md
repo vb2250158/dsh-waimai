@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.0 — Unreleased
+
+- Add an independently launched, authenticated loopback MCP service with a single account owner shared by DSH and other Agents. Separate public tools from the private Host endpoint and reject cross-endpoint credentials.
+- Add optional DSH service attachment without stopping the standalone service on adapter reload. Deployment owns service configuration; see `docs/standalone-mcp.md` for setup and migration restrictions.
+- Exclusively lease the account directory and release it on graceful stdio shutdown. Interrupted processes require inspection before recovering a stale lease; unknown payment records remain authoritative.
+
 ## 0.8.40
 
 - Add `mcpNodeExecutable` for selecting a deployment-owned takeaway MCP Node.js executable. Empty retains the Host interpreter; configuration reload and reset use the existing queued MCP lifecycle without changing other processes.
