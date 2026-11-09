@@ -53,6 +53,8 @@ const EXPECTED_TOOLS = [
   'account_submit',
   'account_trade_history',
   'account_payment_status',
+  'account_payment_preferences',
+  'account_payment_login',
   'account_payment_provider_receipt',
   'account_payment_h5_methods',
   'account_payment_h5_authenticate',
@@ -89,6 +91,9 @@ const EXPECTED_TOOLS = [
   'pay_order',
   'account_payment_h5_pay',
   'get_payment_status',
+  'prepare_h5_payment',
+  'get_h5_payment_status',
+  'continue_h5_payment',
 ]
 
 /**
