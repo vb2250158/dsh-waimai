@@ -1,6 +1,6 @@
 # dsh-waimai
 
-The standalone `waimai-mcp-service` command serves authenticated loopback Streamable HTTP. DSH can attach using `mcpServiceUrl` and `mcpServiceTokenFile`; public clients use `/mcp`, while the DSH UI uses `/host` with a separate token. See [deployment instructions](docs/standalone-mcp.md). Login still uses the attached DSH private UI. Live payment acceptance remains incomplete.
+The standalone `waimai-mcp-service` command serves authenticated loopback Streamable HTTP and a shared management UI at `/`. DSH can attach using `mcpServiceUrl` and `mcpServiceTokenFile`; public clients use `/mcp`, while the DSH UI uses `/host` with a separate token. DSH also hosts the shared UI at `/waimai-app/`. See [deployment instructions](docs/standalone-mcp.md). Live payment acceptance remains incomplete.
 
 `mcpNodeExecutable` selects the Node.js executable for the takeaway MCP child. It defaults to an empty string, which uses the Host's `process.execPath`. A deployment can provide a matching Node.js executable with its own Windows process name and icon. This setting does not modify executable resources, the system Node.js installation, the Host or other child processes. Configuration reloads replace the MCP process through the existing serial lifecycle; an active scheduled task finishes before the latest configuration applies. Clearing the path restores the Host interpreter. An explicit path that cannot start reports an MCP connection failure without selecting another interpreter.
 

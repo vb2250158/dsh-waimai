@@ -32,7 +32,9 @@
     "MIGRATION-0.8.27.md",
     "MIGRATION-0.8.32.md",
     "docs/retail-cart-ledger.md",
-    "docs/standalone-mcp.md"
+    "docs/standalone-mcp.md",
+    "web-src",
+    "scripts/build-web.mjs"
   ],
   "dsh": {
     "bundle": {
@@ -44,16 +46,17 @@
   },
   "scripts": {
     "test": "node --test \"tests/*.test.mjs\"",
-    "check": "node --check lib/index.js && node --check lib/mcp-server.js && node --check lib/mcp-bridge.js && node --check lib/automation.js && node --check lib/payments.js && node --check lib/env.js && node --check lib/paths.js && node --check lib/login.js && node --check lib/taobao-qr.js && node --check lib/taobao-ucc.js && node --check lib/login-rpc.js && node --check lib/account-data.js && node --check lib/account-pool.js && node --check lib/address-data.js && node --check lib/browse-data.js && node --check lib/platform-service.js && node --check lib/client/index.js && node --check lib/hema-data.js && node --check lib/hema-login.js && node --check lib/hema-service.js && node --check lib/trade-data.js && node --check lib/taobao-trade.js && node --check lib/item-options.js && node --check lib/login-diagnostics.js && node --check lib/agent-ordering.js && node --check lib/agent-browse.js && node --check lib/cross-search.js && node --check lib/taobao-search.js && node --check lib/retail-cart-actions.js && node --check lib/image-data.js && node --check lib/login-http.js && node --check lib/taobao-sms.js && node --check lib/retail-trade.js && node --check lib/cashier.js && node --check lib/alipay-agent.js && node --check lib/alipay-h5.js && node --check lib/alipay-h5-methods.js && node --check lib/alipay-h5-input.js && node --check lib/alipay-h5-browser.js && node --check lib/alipay-h5-login.js && node --check lib/payment-credentials.js && node --check lib/mcp-service.js && node --check lib/service-cli.js && node --check lib/service-connection.js && node --check lib/state-owner.js",
-    "start:mcp": "node lib/service-cli.js"
+    "check": "node --check lib/index.js && node --check lib/mcp-server.js && node --check lib/mcp-bridge.js && node --check lib/automation.js && node --check lib/payments.js && node --check lib/env.js && node --check lib/paths.js && node --check lib/login.js && node --check lib/taobao-qr.js && node --check lib/taobao-ucc.js && node --check lib/login-rpc.js && node --check lib/account-data.js && node --check lib/account-pool.js && node --check lib/address-data.js && node --check lib/browse-data.js && node --check lib/platform-service.js && node --check lib/client/index.js && node --check lib/hema-data.js && node --check lib/hema-login.js && node --check lib/hema-service.js && node --check lib/trade-data.js && node --check lib/taobao-trade.js && node --check lib/item-options.js && node --check lib/login-diagnostics.js && node --check lib/agent-ordering.js && node --check lib/agent-browse.js && node --check lib/cross-search.js && node --check lib/taobao-search.js && node --check lib/retail-cart-actions.js && node --check lib/image-data.js && node --check lib/login-http.js && node --check lib/taobao-sms.js && node --check lib/retail-trade.js && node --check lib/cashier.js && node --check lib/alipay-agent.js && node --check lib/standalone-wallet.js && node --check lib/payment-readiness.js && node --check lib/payment-preference.js && node --check lib/alipay-session-store.js && node --check lib/alipay-sign-in.js && node --check lib/alipay-bank-cards.js && node --check lib/payment-icons.js && node --check lib/alipay-h5.js && node --check lib/alipay-h5-methods.js && node --check lib/alipay-h5-input.js && node --check lib/alipay-h5-browser.js && node --check lib/alipay-h5-login.js && node --check lib/payment-credentials.js && node --check lib/mcp-service.js && node --check lib/service-cli.js && node --check lib/service-connection.js && node --check lib/state-owner.js && node --check lib/web-app.js && node --check lib/web-auth.js",
+    "start:mcp": "node lib/service-cli.js",
+    "build:web": "node scripts/build-web.mjs"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "lossless-json": "4.3.0",
     "playwright-core": "1.61.1",
     "qrcode": "1.5.4",
     "set-cookie-parser": "2.7.2",
-    "zod": "^4.0.0"
+    "zod": "4.6.7"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.5-alpha.1 <5.0.0",
@@ -78,7 +81,9 @@
   },
   "icon": "./icon.svg",
   "devDependencies": {
+    "esbuild": "0.28.2",
     "react": "^18.3.1",
+    "react-dom": "18.3.1",
     "react-test-renderer": "^18.3.1"
   },
   "bin": {

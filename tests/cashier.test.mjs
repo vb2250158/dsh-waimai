@@ -1,3 +1,4 @@
+import { TradeError } from '../lib/trade-data.js'
 import { test } from 'node:test'
 import { paymentSessionUuid } from '../lib/alipay-agent.js'
 import assert from 'node:assert/strict'
@@ -43,6 +44,30 @@ async function fixture() {
   const pay = prepared => cashier.submit({ orderRef, paymentRef: prepared.paymentRef, confirmed: true, confirmedCents: 300, maxAmountCents: 1000 })
   return { cashier, trade, order, control, calls, logs, pay, dispose: () => rm(directory, { recursive: true, force: true }) }
 }
+
+test('payment settings with no orders return the persisted choice and reject stale or foreign session choices', async () => {
+  const f = await fixture()
+  let stored = null
+  f.cashier.preference = { load: async () => stored, save: async value => { stored = value }, clear: async () => { stored = null } }
+  try {
+    assert.deepEqual(await f.cashier.paymentPreferences({ operation: 'status' }), { preferredLabel: null, fundingType: null, methods: [], bankState: 'verification-required', preferredBindingAvailable: false, requiresCashierVerification: false })
+    const session = { accountId: 'owner', envData: 'synthetic', client: { submitted: false,
+      summary: () => ({ state: 'ready' }), methods: async () => ({ methods: [{ methodRef: 'synthetic', label: '测试卡' }] }),
+      paymentPreference: ref => { assert.equal(ref, 'synthetic'); return { selectedChannel: 'synthetic-card', childChannel: '', label: '测试卡' } } } }
+    f.cashier.h5Sessions.set(orderRef, session)
+    const listed = await f.cashier.paymentPreferences({ operation: 'status' })
+    assert.equal(listed.methods.length, 1)
+    const saved = await f.cashier.paymentPreferences({ operation: 'save', methodRef: listed.methods[0].methodRef })
+    assert.equal(saved.preferredLabel, '测试卡')
+    await assert.rejects(f.cashier.paymentPreferences({ operation: 'save', methodRef: listed.methods[0].methodRef }), { code: 'h5-method-expired' })
+    session.accountId = 'other-account'
+    await assert.rejects(f.cashier.paymentPreferences({ operation: 'save', methodRef: saved.methods[0].methodRef }), { code: 'h5-method-expired' })
+    f.cashier.h5Sessions.clear()
+    assert.deepEqual(await f.cashier.paymentPreferences({ operation: 'status' }), { preferredLabel: '测试卡', fundingType: null, methods: [], bankState: 'verification-required', preferredBindingAvailable: false, requiresCashierVerification: false })
+    assert.equal((await f.cashier.paymentPreferences({ operation: 'clear' })).preferredLabel, null)
+    assert.equal(f.calls.length, 0)
+  } finally { await f.dispose() }
+})
 
 test('a saved password cannot initiate a CLI payment without an existing H5 session', async () => {
   const f = await fixture()
@@ -762,4 +787,133 @@ test('payment settings select only an owned verified pending cashier without cre
     assert.equal(f.calls.filter(call => call.api === 'submit').length, 0)
     assert.equal((await f.cashier.ledger()).attempts.length, 0)
   } finally { await f.cashier.close(); await f.dispose() }
+})
+
+test('daily payment budget counts only confirmed paid records and persists confirmation time', async () => {
+  const f = await fixture()
+  try {
+    f.trade.budgetCents = 500
+    const prior = { ref: '22222222-2222-4222-8222-222222222222', orderRef: '33333333-3333-4333-8333-333333333333',
+      orderId: '456', accountId: 'other-account', amountCents: 300, at: f.control.now }
+    for (const state of ['unknown', 'requires-verification', 'failed']) {
+      f.cashier.checkDailyBudget({ attempts: [{ ...prior, state }] }, 300)
+    }
+    await writeFile(f.cashier.path, JSON.stringify({ version: 1, attempts: [{ ...prior, state: 'paid', paidAt: f.control.now }] }))
+    const prepared = await f.cashier.prepare({ orderRef })
+    await assert.rejects(f.pay(prepared), { code: 'over-budget' })
+    assert.equal(f.calls.filter(call => call.api === 'submit').length, 0)
+    await writeFile(f.cashier.path, JSON.stringify({ version: 1, attempts: [{ ...prior, state: 'failed' }] }))
+    f.control.submit = { payResult: 'SUCCESS' }
+    await f.pay(prepared)
+    const paid = (await f.cashier.ledger()).attempts.find(row => row.orderRef === orderRef)
+    assert.equal(paid.state, 'paid')
+    assert.equal(paid.paidAt, f.control.now)
+    assert.throws(() => f.cashier.checkDailyBudget({ attempts: [paid] }, 300), { code: 'over-budget' })
+    f.control.now += 86400000
+    f.cashier.checkDailyBudget({ attempts: [paid] }, 300)
+  } finally { await f.dispose() }
+})
+
+test('officially reconciled external payment is recorded once and counts after restart', async () => {
+  const f = await fixture()
+  try {
+    f.trade.budgetCents = 500
+    await f.cashier.reconcile(f.order, 'paid')
+    const first = (await f.cashier.ledger()).attempts[0]
+    f.control.now += 1000
+    await f.cashier.reconcile(f.order, 'paid')
+    const restarted = new TaobaoCashier(f.trade)
+    const ledger = await restarted.ledger()
+    assert.equal(ledger.attempts.length, 1)
+    assert.equal(ledger.attempts[0].paidAt, first.paidAt)
+    assert.throws(() => restarted.checkDailyBudget(ledger, 300), { code: 'over-budget' })
+  } finally { await f.dispose() }
+})
+
+test('H5 continuation cannot submit without verified environment, saved funding, or after submission', async () => {
+ const f=await fixture()
+ try {
+  let submitted=false,invocations=0
+  const current={ref:orderRef,accountId:'owner',envData:null,client:{summary:()=>({state:'ready',submitted})}}
+  f.cashier.h5Sessions.set(orderRef,current)
+  f.cashier.h5Submit=async()=>{invocations++;return {state:'unknown',submitted:true}}
+  assert.equal((await f.cashier.h5Continue({orderRef})).verificationRequired,true)
+  current.envData='synthetic'
+  assert.equal((await f.cashier.h5Continue({orderRef})).state,'requires-payment-method')
+  f.cashier.preference.load=async()=>({selectedChannel:'synthetic',childChannel:'',label:'Test'})
+  await f.cashier.h5Continue({orderRef,confirmed:true,confirmedCents:300,maxAmountCents:5000})
+  assert.equal(invocations,1)
+  submitted=true
+  await f.cashier.h5Continue({orderRef})
+  assert.equal(invocations,1)
+  current.accountId='another-account'
+  assert.equal((await f.cashier.h5Status({orderRef})).state,'not-started')
+ } finally {await f.dispose()}
+})
+
+ test('funding preference saves without any order or cashier and rejects unsupported sources', async () => {
+  const f = await fixture()
+  let stored = null
+  f.cashier.preference = { load: async () => stored, save: async value => { stored = value } }
+  f.trade.journal = async () => assert.fail('settings must not load orders')
+  try {
+    for (const [fundingType, label] of [['balance', '支付宝余额'], ['yuebao', '余额宝']]) {
+      assert.deepEqual(await f.cashier.paymentPreferences({ operation: 'save-type', fundingType }),
+        { preferredLabel: label, fundingType, methods: [], bankState: 'verification-required', preferredBindingAvailable: false, requiresCashierVerification: false })
+      assert.deepEqual(stored, { fundingType, label })
+    }
+    await assert.rejects(f.cashier.paymentPreferences({ operation: 'save-type', fundingType: 'new-card' }), { code: 'h5-method-input-invalid' })
+    assert.equal(f.calls.length, 0)
+  } finally { await f.dispose() }
+})
+
+
+test('bank settings list only opaque choices and revalidate binding and login before saving without an order', async () => {
+  const f = await fixture()
+  const card = { bankCode: 'TEST', bankName: '测试银行', lastFour: '1234', cardType: 'DC', bindingId: 'synthetic-private-binding', logoUrl: 'https://untrusted.example/icon.png' }
+  let stored = null, loginRef = 'login-a', cards = [card]
+  f.cashier.signIn = { cards: async () => ({ state: 'available', loginRef, cards }) }
+  f.cashier.preference = { load: async () => stored, save: async value => { stored = value } }
+  try {
+    const listed = await f.cashier.paymentPreferences({ operation: 'status' })
+    assert.equal(listed.bankState, 'available')
+    assert.equal(listed.methods.length, 1)
+    assert.equal(listed.methods[0].label, '测试银行（尾号 1234） · 储蓄卡')
+    assert(!JSON.stringify(listed).includes(card.bindingId))
+    assert(!JSON.stringify(listed).includes('login-a'))
+    await assert.rejects(f.cashier.paymentPreferences({ operation: 'save', methodRef: 'foreign-ref' }), { code: 'h5-method-expired' })
+    const saved = await f.cashier.paymentPreferences({ operation: 'save', methodRef: listed.methods[0].methodRef })
+    assert.equal(saved.requiresCashierVerification, true)
+    assert.equal(saved.preferredBindingAvailable, true)
+    assert.equal(stored.bindingId, card.bindingId)
+    assert.equal(stored.kind, 'bank-binding')
+    assert.equal(stored.logoUrl, undefined)
+    assert.equal(listed.methods[0].icon, null)
+    loginRef = 'login-b'
+    await assert.rejects(f.cashier.paymentPreferences({ operation: 'save', methodRef: saved.methods[0].methodRef }), { code: 'h5-method-expired' })
+    const refreshed = await f.cashier.paymentPreferences({ operation: 'status' })
+    cards = [{ ...card, bindingId: 'replacement-binding' }]
+    assert.equal((await f.cashier.paymentPreferences({ operation: 'status' })).preferredBindingAvailable, false)
+    await assert.rejects(f.cashier.paymentPreferences({ operation: 'save', methodRef: refreshed.methods[0].methodRef }), { code: 'h5-method-expired' })
+    assert.equal(stored.bindingId, card.bindingId)
+    assert.equal(f.calls.length, 0)
+    assert.equal((await f.cashier.ledger()).attempts.length, 0)
+  } finally { await f.dispose() }
+})
+
+
+test('bank discovery distinguishes renewed verification from transport failure and confirmed emptiness', async () => {
+  const f = await fixture()
+  f.cashier.preference = { load: async () => null }
+  try {
+    for (const [code, expected] of [['alipay-cards-verification-required', 'verification-required'], ['alipay-cards-unavailable', 'unavailable']]) {
+      f.cashier.signIn = { cards: async () => { throw new TradeError(code, 'synthetic failure') } }
+      const view = await f.cashier.paymentPreferences({ operation: 'status' })
+      assert.equal(view.bankState, expected)
+      assert.deepEqual(view.methods, [])
+    }
+    f.cashier.signIn = { cards: async () => ({ state: 'available', cards: [], loginRef: 'synthetic' }) }
+    assert.equal((await f.cashier.paymentPreferences({ operation: 'status' })).bankState, 'available')
+    assert.equal(f.calls.length, 0)
+  } finally { await f.dispose() }
 })

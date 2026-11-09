@@ -56,6 +56,26 @@ test('saved accounts remain logged in together; view selection does not change t
   } finally { await f.close() }
 })
 
+test('committed account list does not wait behind a remote login status check', async () => {
+  const f = await fixture()
+  let release, checking
+  try {
+    const saved = await f.add('12345')
+    const started = new Promise(resolve => { checking = resolve })
+    const gate = new Promise(resolve => { release = resolve })
+    const original = f.jars[0].status.bind(f.jars[0])
+    f.jars[0].status = async () => { checking(); await gate; return original() }
+    const pending = f.pool.dispatch('status', { platformId: 'taobao' })
+    await started
+    let timer
+    try {
+      const list = await Promise.race([f.pool.dispatch('accountsList', { platformId: 'taobao' }),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(Error('Local list queued behind remote status')), 1000) })])
+      assert.equal(list.accounts[0].ref, saved.viewAccountRef)
+    } finally { clearTimeout(timer); release(); await pending }
+  } finally { release?.(); await f.close() }
+})
+
 test('private provider receipts retain account ownership and never invoke payment', async () => {
   const f = await fixture()
   try {

@@ -63,7 +63,7 @@ test('Hema chat add chooses a SKU, submits once and reconciles a delayed result 
     throw Error('unexpected method')
   } }, { tool: fixture, addresses: async () => ok({ accountId: profile.id, selectedRef: addressRef }) })
   try {
-    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
+    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => (node.props['aria-label'] || text(node.props.children)) === label)
     await act(async () => button('刷新商品规格').props.onClick())
     assert(button('加入购物车').props.disabled)
     const variant = root.findAll(node => node.type === 'span' && Array.isArray(node.props.items) && node.props.items.some(row => row.id === result.product.variants[0].id))[0]
@@ -337,7 +337,7 @@ test('Hema delivery repricing resets confirmation and an unknown order permits o
       shopId: '456', revision, lineIds: ['321'], maxAmountCents: 5290 } }) }] } } },
     addresses: async () => ok({ accountId: profile.id, selectedRef: addressRef, addresses: [{ ref: addressRef, usable: true }] }) })
   try {
-    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
+    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => (node.props['aria-label'] || text(node.props.children)) === label)
     const checks = () => root.findAll(node => node.type === 'span' && node.props.checked !== undefined)
     assert(checks()[0].props.disabled); assert(button(fixture.create).props.disabled)
     const picker = root.findAll(node => node.type === 'span' && node.props.className === 'waimai-choice')[0]
@@ -385,7 +385,7 @@ test('unsupported phone selections do not enter a Hema checkout or prevent choos
   } }, { config: { defaultPlatform: 'hema' }, addresses: async () => ok({ accountId: profile.id, selectedRef: addressRef,
     addresses: [{ ref: addressRef, address: '示例地址', usable: true }] }) })
   try {
-    const root = mounted.renderer.root, click = label => root.findAllByType('button').find(node => text(node.props.children) === label).props.onClick()
+    const root = mounted.renderer.root, click = label => root.findAllByType('button').find(node => (node.props['aria-label'] || text(node.props.children)) === label).props.onClick()
     await act(async () => click('门店与商品'))
     await act(async () => click('查看购物车'))
     const checks = root.findAll(node => node.type === 'span' && node.props.checked !== undefined)
@@ -537,7 +537,7 @@ async function mount(rpc, options = {}) {
     window: { localStorage, __ModuleLoader__: { load(entry) { module = entry.factory(name => name === 'react' ? React : primitives) } } },
     document: { createElement: () => ({ dataset: {}, remove() {} }), head: { appendChild() {} } },
     navigator: { userAgent: 'synthetic-browser' },
-    structuredClone, setInterval, clearInterval, setTimeout: options.setTimeout || setTimeout,
+    structuredClone, setInterval: options.setInterval || setInterval, clearInterval: options.clearInterval || clearInterval, setTimeout: options.setTimeout || setTimeout,
     clearTimeout: options.clearTimeout || clearTimeout, crypto: { randomUUID },
   })
   const snapshot = { status: 'ready', writable: true, revision: 1, value: Config(options.config || {}).get() }
@@ -558,6 +558,24 @@ async function mount(rpc, options = {}) {
     for (const listener of listeners) listener()
   }, close: () => { act(() => renderer.unmount()); for (const dispose of disposers.reverse()) dispose?.() } }
 }
+
+test('remote mode displays the service limit and exposes only connection settings locally', async () => {
+  const calls = []
+  const mounted = await mount({ async call(_channel, method) {
+    calls.push(method)
+    if (method === 'serviceStatus') return ok({ platformId: 'taobao', maxOrderAmount: 40, dailyBudget: 80 })
+    if (method === 'accountsList') return ok({ accounts: [] })
+    return ok({ state: 'logged-out', authenticated: false })
+  } }, { config: { mcpServiceUrl: 'http://127.0.0.1:3815/host', mcpServiceTokenFile: 'synthetic-file', maxOrderAmount: 35 } })
+  try {
+    const output = text(mounted.renderer.toJSON())
+    assert(output.includes('¥40')); assert(output.includes('¥80'))
+    assert(!output.includes('¥35'))
+    assert(calls.includes('serviceStatus'))
+    assert.equal(mounted.renderer.root.findAllByType('a').filter(node => node.props.href === '/waimai-app/').length, 1)
+    assert(!mounted.renderer.root.findAllByType('button').some(node => text(node.props.children) === '点单设置'))
+  } finally { mounted.close() }
+})
 
 test('stale platform metadata shows a retry and never starts a login with missing methods', async () => {
   let ready = false; const calls = []
@@ -643,7 +661,7 @@ test('Taobao cart shows an expiring server quote; creation requires explicit con
     await act(async () => { button('确认创建订单').props.onClick(); button('确认创建订单').props.onClick() })
     assert.equal(calls.filter(call => call.endpoint === 'submit').length, 1)
     assert.deepEqual(JSON.parse(JSON.stringify(calls.find(call => call.endpoint === 'submit').payload)), { platformId: 'taobao', accountRef: ref, quoteRef, confirmed: true, confirmedCents: 2100, manualConfirmation: true, maxAmountCents: 3500 })
-    assert.equal(root.findByType('a').props.href, 'https://r.ele.me/payment?synthetic=1')
+    assert.equal(root.findAllByType('a').filter(node => node.props.href === 'https://r.ele.me/payment?synthetic=1').length, 1)
     assert(!calls.some(call => /pay/.test(call.endpoint)))
     assert.equal(button('去结算').props.disabled, true)
     await act(async () => button('刷新购物车').props.onClick())
@@ -859,14 +877,14 @@ test('browser platform and account choices survive remounts without changing oth
     assert.deepEqual(persisted, JSON.parse(await readFile(new URL('./fixtures/view-preference.json', import.meta.url), 'utf8')))
     assert(!entries.get('dsh-waimai.view.v1').includes(profile.id))
     a.close(); calls.length = 0; a = await mount(rpc, { storage })
-    assert.equal(calls[0].payload.accountRef, second)
+    assert.equal(calls.filter(call => call.endpoint === 'status')[0].payload.accountRef, second)
     assert(text(a.renderer.toJSON()).includes('第二账号'))
     await act(async () => pick(a, 'taobao', 'jd'))
     a.close(); calls.length = 0; a = await mount(rpc, { storage })
     assert(text(a.renderer.toJSON()).includes('该平台尚未接入'))
     assert.equal(calls.length, 0)
     await act(async () => pick(a, 'jd', 'taobao'))
-    assert.equal(calls[0].payload.accountRef, second)
+    assert.equal(calls.filter(call => call.endpoint === 'status')[0].payload.accountRef, second)
     assert(text(a.renderer.toJSON()).includes('第二账号'))
   } finally { a.close(); b.close() }
 })
@@ -883,8 +901,8 @@ test('removed account and platform preferences use verified defaults while faile
     throw Error('Unexpected request')
   } }, { storage })
   try {
-    assert.equal(calls[0].payload.accountRef, removed)
-    assert.equal(calls[1].payload.accountRef, undefined)
+    assert.equal(calls.filter(call => call.endpoint === 'status')[0].payload.accountRef, removed)
+    assert.equal(calls.filter(call => call.endpoint === 'status')[1].payload.accountRef, undefined)
     assert(text(mounted.renderer.toJSON()).includes('账号 ID: 12345'))
     assert.deepEqual(JSON.parse(stored), { version: 1, platformId: 'taobao', accounts: { taobao: first } })
     const selector = mounted.renderer.root.findAll(node => node.type === 'span' && node.props.selectedId === first && Array.isArray(node.props.items))[0]
@@ -919,7 +937,7 @@ test('corrupt preferences do not reach the Host, and a failed restore does not s
       return { ok: false, error: { code: 'verification-required', message: '平台需要验证' } }
     } }, { storage: { getItem: () => stored, setItem() { throw Error('A failed restore must not write preferences') } } })
     try {
-      assert.equal(calls.length, 1); assert.equal(calls[0].payload.accountRef, expectedRef)
+      assert.equal(calls.filter(call => call.endpoint === 'status').length, 1); assert.equal(calls.filter(call => call.endpoint === 'status')[0].payload.accountRef, expectedRef)
       assert(text(mounted.renderer.toJSON()).includes('平台需要验证'))
     } finally { mounted.close() }
   }
@@ -1210,7 +1228,7 @@ test('Alipay settings save only payment fields and connection checks use saved c
     return endpoint === 'profile' ? ok(profile) : ok({ authenticated: true, state: 'logged-in' })
   } }, { mutate: async ops => { operations = structuredClone(ops); return true } })
   try {
-    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
+    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => (node.props['aria-label'] || text(node.props.children)) === label)
     await act(async () => button('点单设置').props.onClick())
     const input = label => root.findAll(node => node.type === 'span' && node.props['aria-label'] === label)[0]
     for (const label of ['单笔上限', '每日上限', '支付宝 CLI 绝对路径', '连接超时（毫秒）', '报价有效期（秒）']) assert.equal(input(label), undefined)
@@ -1261,7 +1279,7 @@ test('Alipay connection checks discard stale replies and hide raw RPC errors', a
     return endpoint === 'profile' ? ok(profile) : ok({ authenticated: true, state: 'logged-in' })
   } })
   try {
-    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
+    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => (node.props['aria-label'] || text(node.props.children)) === label)
     await act(async () => button('支付配置').props.onClick())
     await act(async () => { void button('检查连接').props.onClick() })
     assert.equal(button('正在检查…').props.disabled, true)
@@ -1320,7 +1338,7 @@ test('H5 card connects private verification, clears the payment password and rec
     trade: async () => ok({ accountId: profile.id, attempts: [{ orderRef: accountRef, merchant: '示例店', amountCents: 2100,
       status: 'created', orderIds: ['123'], paymentUrl: null, paymentStatus: 'requires-verification' }] }) })
   try {
-    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
+    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => (node.props['aria-label'] || text(node.props.children)) === label)
     const labels = () => root.findAll(node => node.type === 'section' && node.props['aria-label'] === 'H5 后台付款')[0].findAllByType('button').map(node => text(node.props.children))
     states.push(labels())
     await act(async () => button('连接 H5 收银台').props.onClick())
@@ -1364,7 +1382,7 @@ test('payment settings store a shared six-digit password without shopping accoun
   } }, { mutate: async ops => { mutations.push(structuredClone(ops)); return true },
     storage: { getItem: () => null, setItem: (...args) => storage.push(args) } })
   try {
-    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
+    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => (node.props['aria-label'] || text(node.props.children)) === label)
     await act(async () => button('支付配置').props.onClick())
     const input = () => root.findAll(node => node.type === 'span' && node.props['aria-label'] === '六位支付宝支付密码')[0]
     assert.equal(root.findAllByProps({ 'aria-label': '绑定的淘宝闪购账号' }).length, 0)
@@ -1406,7 +1424,7 @@ test('shared password remains configured when the order account changes and fail
     return method === 'profile' ? ok(profile) : ok({ authenticated: true, state: 'logged-in' })
   } })
   try {
-    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
+    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => (node.props['aria-label'] || text(node.props.children)) === label)
     await act(async () => button('支付配置').props.onClick())
     const input = () => root.findAll(node => node.type === 'span' && node.props['aria-label'] === '六位支付宝支付密码')[0]
     const choice = () => root.findAll(node => node.type === 'span' && node.props.className === 'waimai-choice' && node.props.selectedId === first)[0]
@@ -1436,7 +1454,7 @@ test('unmerged legacy passwords allow explicit replacement or removal and accoun
     return method === 'profile' ? ok(profile) : ok({ authenticated: true, state: 'logged-in' })
   } })
   try {
-    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
+    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => (node.props['aria-label'] || text(node.props.children)) === label)
     await act(async () => button('支付配置').props.onClick())
     const section = () => root.findAll(node => node.type === 'section' && node.props['aria-label'] === '支付宝支付密码')[0]
     const input = () => section().findAll(node => node.type === 'span' && node.props.type === 'password')[0]
@@ -1473,7 +1491,7 @@ test('leaving payment settings discards password input and a late save response 
     return method === 'profile' ? ok(profile) : ok({ authenticated: true, state: 'logged-in' })
   } })
   try {
-    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
+    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => (node.props['aria-label'] || text(node.props.children)) === label)
     await act(async () => button('支付配置').props.onClick())
     const input = () => root.findAll(node => node.type === 'span' && node.props['aria-label'] === '六位支付宝支付密码')[0]
     await act(async () => input().props.onChange({ target: { value: '654321' } }))
@@ -1508,7 +1526,7 @@ test('H5 reconciliation snapshots distinguish unsent, submitted and unknown outc
         attempts: [{ orderRef: accountRef }] } }) }] } } }, trade: async () => ok({ accountId: profile.id, attempts: [{ orderRef: accountRef,
       merchant: '示例店', amountCents: 2100, status: 'created', orderIds: ['123'], paymentUrl: null, paymentStatus: 'requires-verification' }] }) })
     try {
-      const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
+      const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => (node.props['aria-label'] || text(node.props.children)) === label)
       await act(async () => button('连接 H5 收银台').props.onClick())
       if (example.submitted !== false) await act(async () => button('确认后台付款 · ¥21.00').props.onClick())
       const section = root.findAll(node => node.type === 'section' && node.props['aria-label'] === 'H5 后台付款')[0]
@@ -1522,429 +1540,256 @@ test('H5 reconciliation snapshots distinguish unsent, submitted and unknown outc
   }
 })
 
-test('payment settings sign in to the selected pending order without creating orders or submitting payment', async () => {
-  const ref = '11111111-1111-4111-8111-111111111111', orderRef = '22222222-2222-4222-8222-222222222222', calls = [], states = []
-  const record = { orderRef, orderIds: ['123'], status: 'created', merchant: '验收商店', amountCents: 4690 }
-  const officialOrders = [{ id: '123', status: '等待支付' }]
-  const rpc = { async call(_channel, method, payload) {
-    calls.push({ method, payload: structuredClone(payload) })
-    if (method === 'accountsList') return ok({ viewAccountRef: ref, accounts: [{ ref, nickname: '验收账号' }] })
-    if (method === 'paymentCredential') return ok({ configured: true, writable: true })
-    if (method === 'tradeHistory') return ok({ accountId: profile.id, attempts: [record] })
-    if (method === 'orders') return ok({ accountId: profile.id, orders: officialOrders })
-    if (method === 'paymentStatus') return ok({ accountId: profile.id, orderRef, paymentStatus: 'requires-verification', officialOrders })
-    if (method === 'paymentH5Start') return ok({ h5Ref: ref, state: 'requires-verification', verificationRequired: true, submitted: false })
-    if (method === 'paymentH5Authenticate') return ok({ h5Ref: ref, state: payload.operation === 'sms' ? 'ready' : 'verifying', submitted: false,
-      ...(payload.operation === 'sms' ? {} : { loginInput: payload.operation === 'phone' ? { kind: 'sms', codeLength: 6 } : { kind: 'phone' } }) })
+test('payment settings start Alipay QR authentication with zero orders and no payment call', async () => {
+  const accountRef = '11111111-1111-4111-8111-111111111111', calls = []
+  const mounted = await mount({ async call(_channel, method, payload) {
+    calls.push({ method, payload })
+    if (method === 'accountsList') return ok({ viewAccountRef: accountRef, accounts: [{ ref: accountRef, nickname: '测试账号' }] })
+    if (method === 'paymentCredential') return ok({ configured: false, writable: true })
+    if (method === 'paymentLogin') return ok(payload.operation === 'cancel' ? { state: 'signed-out' }
+      : { state: 'waiting-scan', loginRef: accountRef, qrImage: 'data:image/png;base64,cXI=' })
     return method === 'profile' ? ok(profile) : ok({ authenticated: true, state: 'logged-in' })
-  } }
-  const mounted = await mount(rpc, { trade: (method, payload) => rpc.call('/waimai-login', method, payload) })
+  } })
   try {
-    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
+    const button = label => mounted.renderer.root.findAllByType('button').find(node => (node.props['aria-label'] || text(node.props.children)) === label)
     await act(async () => button('支付配置').props.onClick())
-    assert(text(mounted.renderer.toJSON()).includes('支付密码已设置'))
-    assert(text(mounted.renderer.toJSON()).includes('尚未检查支付宝验证入口'))
-    await act(async () => button('检查待付款订单').props.onClick())
-    states.push({ action: text(button('登录支付宝').props.children), amount: '¥46.90' })
+    assert.equal(button('检查待付款订单'), undefined)
+    calls.length = 0
     await act(async () => button('登录支付宝').props.onClick())
-    assert.equal(calls.find(x => x.method === 'paymentH5Start').payload.verificationOnly, true)
-    assert.equal(calls.filter(x => x.method === 'paymentH5Authenticate' && x.payload.operation === 'open').length, 0)
-    assert.equal(calls.filter(x => x.method === 'paymentH5Authenticate' && x.payload.operation === 'inline').length, 1)
-    await act(async () => root.findAll(node => node.type === 'span' && node.props['aria-label'] === '支付宝手机号')[0].props.onChange({ target: { value: '13800000000' } }))
-    await act(async () => button('下一步').props.onClick())
-    await act(async () => root.findAll(node => node.type === 'span' && node.props['aria-label'] === '支付宝短信验证码')[0].props.onChange({ target: { value: '654321' } }))
-    await act(async () => button('验证并连接').props.onClick())
-    assert(text(mounted.renderer.toJSON()).includes('此订单的支付宝登录验证已完成'))
-    assert(!root.findAllByType('button').some(node => /确认后台付款|使用已保存的支付密码/.test(text(node.props.children))))
-    assert(!calls.some(x => ['submit', 'paymentPay', 'paymentH5Submit'].includes(x.method)))
-    assert(calls.filter(x => ['tradeHistory', 'orders', 'paymentStatus', 'paymentH5Start', 'paymentH5Authenticate'].includes(x.method)).every(x => x.payload.accountRef === ref))
-    states.push({ verified: true, paymentButtons: 0, paymentCalls: 0 })
-    assert.deepEqual(states, JSON.parse(await readFile(new URL('./fixtures/settings-payment-login.json', import.meta.url), 'utf8')))
+    assert.deepEqual(calls.map(c => c.method), ['paymentLogin'])
+    assert.deepEqual(structuredClone(calls[0].payload), { platformId: 'taobao', accountRef, operation: 'start' })
+    assert.equal(mounted.renderer.root.findAllByType('img').filter(n => n.props.alt === '支付宝官方登录二维码').length, 1)
+    await act(async () => button('退出支付宝登录').props.onClick())
+    assert.equal(mounted.renderer.root.findAllByType('img').filter(n => n.props.alt === '支付宝官方登录二维码').length, 0)
   } finally { mounted.close() }
 })
 
-test('payment settings never offer cancelled, unknown or foreign orders as login sessions', async () => {
-  const ref = '11111111-1111-4111-8111-111111111111', records = [
-    { orderRef: 'cancelled', orderIds: ['1'], status: 'created' },
-    { orderRef: 'unknown', orderIds: ['2'], status: 'unknown' },
-    { orderRef: 'foreign', orderIds: ['3'], status: 'created' },
-  ]
-  const rpc = { async call(_channel, method) {
-    if (method === 'accountsList') return ok({ accounts: [{ ref, nickname: '验收账号' }] })
-    if (method === 'paymentCredential') return ok({ configured: true, writable: true })
-    if (method === 'tradeHistory') return ok({ accountId: profile.id, attempts: records })
-    if (method === 'orders') return ok({ accountId: profile.id, orders: [{ id: '1', status: '订单已取消' }, { id: '2', status: '待支付' }, { id: '3', status: '等待支付' }] })
-    if (method === 'paymentStatus') return ok({ accountId: 'foreign-owner', paymentStatus: 'requires-verification' })
+test('payment settings save the account default through private RPC without reading orders or paying', async () => {
+  const accountRef = '11111111-1111-4111-8111-111111111111', methodRef = '22222222-2222-4222-8222-222222222222', calls = []
+  let preferredLabel = null
+  const mounted = await mount({ async call(_channel, method, payload) {
+    calls.push({ method, payload })
+    if (method === 'accountsList') return ok({ viewAccountRef: accountRef, accounts: [{ ref: accountRef, nickname: '测试账号' }] })
+    if (method === 'paymentCredential') return ok({ configured: false, writable: true })
+    if (method === 'paymentPreferences') {
+      if (payload.operation === 'save') { assert.equal(payload.methodRef, methodRef); preferredLabel = '测试资金来源' }
+      if (payload.operation === 'save-type') { assert.equal(payload.fundingType, 'yuebao'); assert.equal(payload.methodRef, undefined); preferredLabel = '余额宝' }
+      if (payload.operation === 'clear') preferredLabel = null
+      return ok({ preferredLabel, methods: [{ methodRef, label: '测试资金来源' }] })
+    }
     return method === 'profile' ? ok(profile) : ok({ authenticated: true, state: 'logged-in' })
-  } }
-  const mounted = await mount(rpc, { trade: (method, payload) => rpc.call('/waimai-login', method, payload) })
+  } })
   try {
-    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
+    const button = label => mounted.renderer.root.findAllByType('button').find(node => (node.props['aria-label'] || text(node.props.children)) === label)
     await act(async () => button('支付配置').props.onClick())
-    await act(async () => button('检查待付款订单').props.onClick())
-    assert.equal(button('登录支付宝'), undefined)
-    assert(root.findAllByProps({ role: 'alert' }).length > 0)
-    assert(!text(mounted.renderer.toJSON()).includes('没有可继续验证的待付款订单'))
+    calls.length = 0
+    await act(async () => button('设为默认 · 测试资金来源').props.onClick())
+    assert.deepEqual(calls.map(item => item.method), ['paymentPreferences'])
+    assert.equal(calls[0].payload.accountRef, accountRef)
+    assert(button('清除默认方式'))
+    await act(async () => button('点餐').props.onClick())
+    await act(async () => button('支付配置').props.onClick())
+    assert(button('清除默认方式'))
+    await act(async () => button('清除默认方式').props.onClick())
+    assert.equal(button('清除默认方式'), undefined)
+    calls.length = 0
+    await act(async () => button('设为默认 · 余额宝').props.onClick())
+    assert.deepEqual(calls.map(item => item.method), ['paymentPreferences'])
+    assert(text(mounted.renderer.toJSON()).includes('余额宝'))
   } finally { mounted.close() }
 })
 
-test('settings login retains initialization errors instead of opening a window and hiding reconciliation', async () => {
-  const ref = '11111111-1111-4111-8111-111111111111', record = { orderRef: ref, status: 'created', orderIds: ['123'], amountCents: 4690 }, calls = []
-  const officialOrders = [{ id: '123', status: '待支付' }]
-  const rpc = { async call(_channel, method, payload) {
-    calls.push(method)
-    if (method === 'accountsList') return ok({ accounts: [{ ref, nickname: '验收账号' }] })
-    if (method === 'paymentCredential') return ok({ configured: true, writable: true })
-    if (method === 'tradeHistory') return ok({ accountId: profile.id, attempts: [record] })
-    if (method === 'orders') return ok({ accountId: profile.id, orders: officialOrders })
-    if (method === 'paymentStatus') return ok({ accountId: profile.id, paymentStatus: 'requires-verification', officialOrders })
-    if (method === 'paymentH5Start') return ok({ h5Ref: ref, verificationRequired: true, state: 'requires-reconciliation', reason: 'business-error', submitted: false })
-    return method === 'profile' ? ok(profile) : ok({ authenticated: true, state: 'logged-in' })
-  } }
-  const mounted = await mount(rpc, { trade: (method, payload) => rpc.call('/waimai-login', method, payload) })
+test('saved accounts are displayed while remote status is pending without claiming authenticated', async () => {
+  const ref = '11111111-1111-4111-8111-111111111111'
+  let finish
+  const pending = new Promise(resolve => { finish = resolve })
+  const mounted = await mount({ async call(_channel, method) {
+    if (method === 'accountsList') return ok({ viewAccountRef: ref, accounts: [{ ref, nickname: '已保存测试账号' }] })
+    if (method === 'status') return pending
+    throw Error('Unexpected request')
+  } })
   try {
-    const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
+    assert(mounted.renderer.root.findAll(node => node.props.selectedId === ref).length > 0)
+    assert(!text(mounted.renderer.toJSON()).includes('尚未添加账号'))
+    assert(text(mounted.renderer.toJSON()).includes('尚未检查登录状态'))
+    await act(async () => finish(ok({ authenticated: false, state: 'logged-out', viewAccountRef: ref,
+      accounts: [{ ref, nickname: '已保存测试账号' }] })))
+  } finally { mounted.close() }
+})
+
+test('standalone wallet refreshes authorization automatically without overwriting draft limit or code, and stops on unmount', async () => {
+  const timers = new Map(); let next = 0, authorized = false, reads = 0
+  const mounted = await mount({ async call(_channel, method) {
+    if (method === 'serviceStatus') return ok({ platformId: 'taobao', maxOrderAmount: 50, dailyBudget: 50 })
+    if (method === 'accountsList') return ok({ accounts: [] })
+    if (method === 'paymentSetup') { reads++; return ok({state: authorized ? 'authorized' : 'pending', ready: false, maxAmountCents: 5000, serviceCapCents: 5000}) }
+    return ok({ state: 'logged-out', authenticated: false })
+  } }, { config: { mcpServiceUrl: 'http://127.0.0.1:3815/host', mcpServiceTokenFile: 'synthetic-file' },
+    setInterval: (fn, ms) => { const id=++next; timers.set(id,{fn,ms}); return id }, clearInterval: id => timers.delete(id) })
+  try {
+    const root=mounted.renderer.root
+    await act(async () => root.findAllByType('button').find(node => text(node.props.children) === '支付配置').props.onClick())
+    const field=label => root.findAll(node => node.props['aria-label'] === label && typeof node.props.onChange === 'function')[0]
+    await act(async () => { field('每笔支付上限（元）').props.onChange({target:{value:'40'}}); field('本次钱包授权码').props.onChange({target:{value:'draft-code'}}) })
+    const poll=[...timers.values()].find(timer=>timer.ms===5000)
+    assert(poll)
+    await act(async () => poll.fn())
+    assert.equal(field('每笔支付上限（元）').props.value,'40')
+    assert.equal(field('本次钱包授权码').props.value,'draft-code')
+    authorized=true
+    await act(async () => poll.fn())
+    assert(text(mounted.renderer.toJSON()).includes('官方钱包已授权，请保存支付配置'))
+    assert(reads >= 3)
+  } finally { mounted.close() }
+  assert.equal(timers.size,0)
+})
+
+test('Alipay status explicitly distinguishes signed out, signed in and unverifiable from shopping login', async () => {
+  const ref = '11111111-1111-4111-8111-111111111111'
+  for (const [state, expected] of [['signed-out', '尚未登录支付宝'], ['signed-in', '支付宝已登录'], ['error', '支付宝登录状态未确认']]) {
+    const mounted = await mount({ async call(_channel, method) {
+      if (method === 'accountsList') return ok({ viewAccountRef: ref, accounts: [{ ref, nickname: '测试账号' }] })
+      if (method === 'paymentLogin') return state === 'error' ? { ok: false } : ok({ state })
+      if (method === 'paymentPreferences') return ok({ preferredLabel: null, methods: [] })
+      if (method === 'paymentCredential') return ok({ configured: false, writable: true })
+      return method === 'profile' ? ok(profile) : ok({ authenticated: true, state: 'logged-in' })
+    } })
+    try {
+      await act(async () => mounted.renderer.root.findAllByType('button').find(node => text(node.props.children) === '支付配置').props.onClick())
+      const value = text(mounted.renderer.toJSON())
+      assert(value.includes(expected)); assert(value.includes('购物账号'))
+      const card = mounted.renderer.root.findByProps({ className: 'waimai-auth-card' })
+      assert.equal(card.props['data-state'], state === 'signed-in' ? 'success' : state === 'error' ? 'unknown' : 'pending')
+      if (state === 'error') assert(!text(card.props.children).includes('尚未登录支付宝'))
+    } finally { mounted.close() }
+  }
+})
+
+test('Alipay login click during status check is queued once with visible feedback', async () => {
+  const ref = '11111111-1111-4111-8111-111111111111', calls = []
+  let finishStatus
+  const mounted = await mount({ async call(_channel, method, payload) {
+    if (method === 'accountsList') return ok({ viewAccountRef: ref, accounts: [{ ref, nickname: '测试账号' }] })
+    if (method === 'paymentLogin') {
+      calls.push(payload.operation)
+      if (payload.operation === 'status') return new Promise(resolve => { finishStatus = () => resolve(ok({ state: 'signed-out' })) })
+      return ok({ state: 'waiting-scan', loginRef: ref, qrImage: 'data:image/png;base64,cXI=' })
+    }
+    if (method === 'paymentPreferences') return ok({ preferredLabel: null, methods: [] })
+    if (method === 'paymentCredential') return ok({ configured: false, writable: true })
+    return method === 'profile' ? ok(profile) : ok({ authenticated: true, state: 'logged-in' })
+  } })
+  try {
+    const button = label => mounted.renderer.root.findAllByType('button').find(node => (node.props['aria-label'] || text(node.props.children)) === label)
     await act(async () => button('支付配置').props.onClick())
-    await act(async () => button('检查待付款订单').props.onClick())
+    assert.equal(button('登录支付宝').props.disabled, false)
     await act(async () => button('登录支付宝').props.onClick())
-    assert(text(mounted.renderer.toJSON()).includes('支付宝返回业务错误'))
-    assert.equal(calls.filter(x => x === 'paymentH5Authenticate').length, 0)
+    assert(text(mounted.renderer.toJSON()).includes('正在等待状态检查，随后打开登录窗口'))
+    assert.deepEqual(calls, ['status'])
+    await act(async () => finishStatus())
+    assert.deepEqual(calls, ['status', 'start'])
+    assert(text(mounted.renderer.toJSON()).includes('请用支付宝 App 扫码'))
   } finally { mounted.close() }
 })
 
-async function mountInlineSettings(authenticate, options = {}) {
-  const first = '11111111-1111-4111-8111-111111111111', second = '22222222-2222-4222-8222-222222222222'
-  const calls = [], record = { orderRef: first, orderIds: ['123'], status: 'created', merchant: '示例验证店', amountCents: 4690 }
-  const officialOrders = [{ id: '123', status: '等待支付' }]
-  const rpc = { async call(channel, method, payload) {
-    calls.push({ channel, method, payload: structuredClone(payload) })
-    if (method === 'accountsList') return ok({ viewAccountRef: first, accounts: [{ ref: first, nickname: '第一账号' }, { ref: second, nickname: '第二账号' }] })
-    if (method === 'paymentCredential') return ok({ configured: true, writable: true })
-    if (method === 'tradeHistory') return ok({ accountId: profile.id, attempts: [record] })
-    if (method === 'orders') return ok({ accountId: profile.id, orders: officialOrders })
-    if (method === 'paymentStatus') return ok({ accountId: profile.id, orderRef: first, paymentStatus: 'requires-verification', officialOrders })
-    if (method === 'paymentH5Start') return ok({ h5Ref: first, state: 'requires-verification', verificationRequired: true, submitted: false })
-    if (method === 'paymentH5Authenticate') return authenticate(payload)
-    if (method === 'paymentH5Methods') return options.paymentMethods(payload)
+
+test('card refresh does not claim successful emptiness when login or discovery failed', async () => {
+  const accountRef = '11111111-1111-4111-8111-111111111111'
+  let bankState = 'verification-required'
+  const mounted = await mount({ async call(_channel, method) {
+    if (method === 'accountsList') return ok({ viewAccountRef: accountRef, accounts: [{ ref: accountRef, nickname: '测试账号' }] })
+    if (method === 'paymentPreferences') return ok({ preferredLabel: null, methods: [], bankState })
+    if (method === 'paymentLogin') return ok({ state: 'signed-out' })
     return method === 'profile' ? ok(profile) : ok({ authenticated: true, state: 'logged-in' })
-  } }
-  const mounted = await mount(rpc, { ...options, trade: (method, payload) => rpc.call('/waimai-login', method, payload) })
-  const root = mounted.renderer.root, button = label => root.findAllByType('button').find(node => text(node.props.children) === label)
-  const input = label => root.findAll(node => node.type === 'span' && node.props['aria-label'] === label && node.props.onChange)[0]
-  await act(async () => button('支付配置').props.onClick())
-  await act(async () => button('检查待付款订单').props.onClick())
-  await act(async () => button('登录支付宝').props.onClick())
-  return { ...mounted, root, button, input, calls, first, second }
-}
-
-const inlineProgress = loginInput => ok({ h5Ref: '11111111-1111-4111-8111-111111111111', state: 'verifying', submitted: false, verificationRequired: true, loginInput })
-
-test('inline Alipay verification clears inputs before private requests, serializes clicks and only resends when the server enables it', async () => {
-  const phoneResponse = deferred(), storage = [], mutations = []
-  const mounted = await mountInlineSettings(payload => {
-    if (payload.operation === 'inline') return inlineProgress({ kind: 'phone' })
-    if (payload.operation === 'phone') return phoneResponse.promise
-    if (payload.operation === 'refresh') return inlineProgress({ kind: 'sms', codeLength: 4, canResend: true })
-    if (payload.operation === 'resend') return inlineProgress({ kind: 'sms', codeLength: 4, canResend: false })
-    if (payload.operation === 'sms') return ok({ state: 'ready', verificationRequired: false, submitted: false })
-    return inlineProgress({ kind: 'pending' })
-  }, { storage: { getItem: () => null, setItem: (...value) => storage.push(value) }, mutate: async ops => { mutations.push(ops); return true } })
+  } })
   try {
-    const { input, button, root, calls, first } = mounted
-    assert.equal(input('支付宝手机号').props.autoComplete, 'off')
-    assert.equal(button('打开官方窗口处理额外验证'), undefined)
-    await act(async () => input('支付宝手机号').props.onChange({ target: { value: '13800000000' } }))
-    await act(async () => { button('下一步').props.onClick(); button('下一步').props.onClick() })
-    assert.equal(input('支付宝手机号').props.value, ''); assert.equal(button('下一步').props.disabled, true)
-    assert.equal(calls.filter(x => x.payload.operation === 'phone').length, 1)
-    await act(async () => phoneResponse.resolve(inlineProgress({ kind: 'sms', codeLength: 4, canResend: false })))
-    assert.equal(input('支付宝短信验证码').props.maxLength, 4)
-    assert.equal(button('重新发送验证码'), undefined)
-    await act(async () => input('支付宝短信验证码').props.onChange({ target: { value: '123456' } }))
-    assert.equal(button('验证并连接').props.disabled, true)
-    await act(async () => button('刷新验证状态').props.onClick())
-    assert.equal(input('支付宝短信验证码').props.value, '')
-    await act(async () => { button('重新发送验证码').props.onClick(); button('重新发送验证码').props.onClick() })
-    assert.equal(calls.filter(x => x.payload.operation === 'resend').length, 1)
-    assert.equal(button('重新发送验证码'), undefined)
-    await act(async () => input('支付宝短信验证码').props.onChange({ target: { value: '1234' } }))
-    const entered = []
-    await act(async () => input('支付宝短信验证码').props.onKeyDown({ key: 'Enter', preventDefault: () => entered.push('prevent'), stopPropagation: () => entered.push('stop') }))
-    assert.deepEqual(entered, ['prevent', 'stop'])
-    assert.equal(input('支付宝短信验证码'), undefined)
-    assert(text(mounted.renderer.toJSON()).includes('此订单的支付宝登录验证已完成'))
-    await act(async () => root.findByType('form').props.onSubmit({ preventDefault() {} }))
-    assert(!JSON.stringify(storage).includes('13800000000')); assert(!JSON.stringify(mutations).includes('13800000000'))
-    assert(!text(mounted.renderer.toJSON()).includes('13800000000'))
-    const authentication = calls.filter(x => x.method === 'paymentH5Authenticate')
-    assert.deepEqual(authentication.map(x => x.payload.operation), ['inline', 'phone', 'refresh', 'resend', 'sms'])
-    assert(authentication.every(x => x.channel === '/waimai-login' && x.payload.accountRef === first && x.payload.orderRef === first))
-    assert.deepEqual(authentication.filter(x => Object.hasOwn(x.payload, 'phone')).map(x => x.payload.operation), ['phone'])
-    assert.deepEqual(authentication.filter(x => Object.hasOwn(x.payload, 'code')).map(x => x.payload.operation), ['sms'])
-    assert(!calls.some(x => ['paymentH5Submit', 'submit', 'paymentPay'].includes(x.method)))
-  } finally { mounted.close() }
-})
-
-test('inline pending and external steps need explicit refresh or a user-opened official window and never claim full verification support', async () => {
-  let state = 'pending'
-  const mounted = await mountInlineSettings(payload => {
-    if (payload.operation === 'refresh' && state === 'ready') return ok({ state: 'ready', verificationRequired: false, submitted: false })
-    return inlineProgress({ kind: state })
-  })
-  try {
-    const { button, calls } = mounted
-    assert(text(mounted.renderer.toJSON()).includes('支付宝验证正在处理中'))
-    assert.equal(calls.filter(x => x.payload.operation === 'open').length, 0)
-    state = 'external'
-    await act(async () => button('刷新验证状态').props.onClick())
-    assert(text(mounted.renderer.toJSON()).includes('当前步骤无法在 DSH 内完成'))
-    assert.equal(calls.filter(x => x.payload.operation === 'open').length, 0)
-    await act(async () => button('打开官方窗口处理额外验证').props.onClick())
-    assert.equal(calls.filter(x => x.payload.operation === 'open').length, 1)
-    state = 'ready'
-    await act(async () => button('刷新验证状态').props.onClick())
-    assert(text(mounted.renderer.toJSON()).includes('此订单的支付宝登录验证已完成'))
-    assert(!mounted.root.findAllByType('button').some(node => /确认后台付款|使用已保存的支付密码/.test(text(node.props.children))))
-  } finally { mounted.close() }
-})
-
-test('inline authentication failures never echo inputs or resend them, and unknown SMS lengths cannot be guessed', async () => {
-  const mounted = await mountInlineSettings(payload => {
-    if (payload.operation === 'phone') return { ok: false, error: { message: 'private phone 13800000000 and code 1234' } }
-    if (payload.operation === 'refresh') return inlineProgress({ kind: 'sms' })
-    return inlineProgress({ kind: 'phone' })
-  })
-  try {
-    const { input, button, calls } = mounted
-    await act(async () => input('支付宝手机号').props.onChange({ target: { value: '13800000000' } }))
-    await act(async () => button('下一步').props.onClick())
-    assert.equal(input('支付宝手机号').props.value, '')
-    assert(text(mounted.renderer.toJSON()).includes('手机号和验证码已清空，不会自动重发'))
-    assert(!text(mounted.renderer.toJSON()).includes('13800000000'))
-    assert.equal(calls.filter(x => x.payload.operation === 'phone').length, 1)
-    await act(async () => button('刷新验证状态').props.onClick())
-    assert.equal(input('支付宝短信验证码'), undefined)
-    assert.equal(button('验证并连接'), undefined)
-    assert.equal(button('重新发送验证码'), undefined)
-    assert(text(mounted.renderer.toJSON()).includes('支付宝验证正在处理中'))
-  } finally { mounted.close() }
-})
-
-test('switching payment accounts discards a delayed inline phone response and cancels only the old account session', async () => {
-  const delayed = deferred()
-  const mounted = await mountInlineSettings(payload => payload.operation === 'phone' ? delayed.promise : inlineProgress({ kind: 'phone' }))
-  try {
-    const { input, button, root, first, second, calls } = mounted
-    await act(async () => input('支付宝手机号').props.onChange({ target: { value: '13800000000' } }))
-    await act(async () => button('下一步').props.onClick())
-    const selector = root.findAll(node => node.type === 'span' && node.props.className === 'waimai-choice' && node.props.selectedId === first)[0]
-    await act(async () => selector.props.onSelect(second))
-    await act(async () => delayed.resolve(inlineProgress({ kind: 'sms', codeLength: 6 })))
-    assert.equal(input('支付宝短信验证码'), undefined)
-    assert.equal(input('支付宝手机号'), undefined)
-    assert(text(mounted.renderer.toJSON()).includes('尚未检查支付宝验证入口'))
-    const cancelled = calls.filter(x => x.method === 'paymentH5Authenticate' && x.payload.operation === 'cancel')
-    assert.equal(cancelled.length, 1); assert.equal(cancelled[0].payload.accountRef, first)
-    assert(!calls.some(x => x.method === 'paymentH5Authenticate' && x.payload.accountRef === second))
-  } finally { mounted.close() }
-})
-
-test('Alipay login channels require explicit selection, serialize requests and never persist channel references or submit payment', async () => {
-  const delayed = deferred(), storage = [], mutations = []
-  const channelRef = 'temporary-login-channel', label = '<b>支付宝手机号登录</b>'
-  const mounted = await mountInlineSettings(payload => payload.operation === 'channel' ? delayed.promise
-    : inlineProgress({ kind: 'channel', channels: [{ channelRef, label, disabled: false }, { channelRef: 'unavailable-channel', label: '不可用入口', disabled: true }] }),
-  { storage: { getItem: () => null, setItem: (...value) => storage.push(value) }, mutate: async ops => { mutations.push(ops); return true } })
-  try {
-    const { button, input, calls, root, first } = mounted
-    assert(text(mounted.renderer.toJSON()).includes('选择支付宝登录方式'))
-    assert(text(mounted.renderer.toJSON()).includes('登录后再确认实际付款方式'))
-    assert.equal(button(label).props.children, label)
-    assert.equal(button('不可用入口').props.disabled, true)
-    assert.deepEqual(calls.filter(x => x.method === 'paymentH5Authenticate').map(x => x.payload.operation), ['inline'])
-    assert.equal(button('打开官方窗口处理额外验证'), undefined)
-    await act(async () => button('不可用入口').props.onClick())
-    assert.equal(calls.filter(x => x.payload.operation === 'channel').length, 0)
-    await act(async () => { button(label).props.onClick(); button(label).props.onClick() })
-    assert.equal(button(label).props.disabled, true)
-    const selection = calls.filter(x => x.payload.operation === 'channel')
-    assert.equal(selection.length, 1)
-    assert.deepEqual(selection[0].payload, { platformId: 'taobao', accountRef: first, orderRef: first, h5Ref: first, operation: 'channel', channelRef })
-    await act(async () => delayed.resolve(inlineProgress({ kind: 'phone' })))
-    assert(input('支付宝手机号'))
-    assert.equal(button(label), undefined)
-    assert.equal(button('下一步').props.disabled, true)
-    await act(async () => root.findByType('form').props.onSubmit({ preventDefault() {} }))
-    assert(!JSON.stringify(storage).includes(channelRef))
-    assert(!JSON.stringify(mutations).includes(channelRef))
-    assert(!calls.some(x => ['paymentH5Submit', 'submit', 'paymentPay'].includes(x.method)))
-    assert.deepEqual(calls.filter(x => x.method === 'paymentH5Authenticate').map(x => x.payload.operation), ['inline', 'channel'])
-  } finally { mounted.close() }
-})
-
-test('a late login channel selection cannot restore the previous shopping account verification session', async () => {
-  const delayed = deferred()
-  const mounted = await mountInlineSettings(payload => payload.operation === 'channel' ? delayed.promise
-    : inlineProgress({ kind: 'channel', channels: [{ channelRef: 'temporary-channel', label: '手机号登录', disabled: false }] }))
-  try {
-    const { button, input, root, first, second, calls } = mounted
-    await act(async () => button('手机号登录').props.onClick())
-    const selector = root.findAll(node => node.type === 'span' && node.props.className === 'waimai-choice' && node.props.selectedId === first)[0]
-    await act(async () => selector.props.onSelect(second))
-    await act(async () => delayed.resolve(inlineProgress({ kind: 'phone' })))
-    assert.equal(input('支付宝手机号'), undefined)
-    assert(text(mounted.renderer.toJSON()).includes('尚未检查支付宝验证入口'))
-    const cancelled = calls.filter(x => x.method === 'paymentH5Authenticate' && x.payload.operation === 'cancel')
-    assert.equal(cancelled.length, 1)
-    assert.equal(cancelled[0].payload.accountRef, first)
-    assert(!calls.some(x => ['paymentH5Submit', 'submit', 'paymentPay'].includes(x.method)))
-  } finally { mounted.close() }
-})
-
-const cashierMethods = (payload, methods) => ok({ orderRef: payload.orderRef, h5Ref: payload.h5Ref, state: 'ready', submitted: false, amountCents: 4690, methods })
-const methodA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', methodB = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
-
-test('settings payment methods load and select only explicitly, show backend readback and never pay or persist method references', async () => {
-  const selecting = deferred(), storage = [], mutations = [], label = '<b>银行卡（1234）</b>'
-  const methods = [{ methodRef: methodA, label, selected: true }, { methodRef: methodB, label, selected: false }]
-  const mounted = await mountInlineSettings(() => ok({ state: 'ready', verificationRequired: false, submitted: false }), {
-    paymentMethods: payload => payload.operation === 'list' ? cashierMethods(payload, methods) : selecting.promise,
-    storage: { getItem: () => null, setItem: (...value) => storage.push(value) }, mutate: async ops => { mutations.push(ops); return true },
-  })
-  try {
-    const { button, calls, root, first } = mounted
-    assert.equal(calls.filter(x => x.method === 'paymentH5Methods').length, 0)
-    assert(text(mounted.renderer.toJSON()).includes('不会保存为跨订单默认银行卡'))
+    const button = label => mounted.renderer.root.findAllByType('button').find(node => (node.props['aria-label'] || text(node.props.children)) === label)
+    await act(async () => button('支付配置').props.onClick())
+    assert(text(mounted.renderer.toJSON()).includes('请先完成支付宝登录'))
+    assert(!text(mounted.renderer.toJSON()).includes('检查完成：当前没有'))
+    bankState = 'unavailable'
     await act(async () => button('刷新付款方式').props.onClick())
-    const rows = () => root.findAll(node => node.type === 'div' && node.props.className === 'waimai-order' && node.findAllByType('button').some(child => text(child.props.children) === '选择此方式'))
-    assert.equal(rows().length, 2)
-    assert.deepEqual(rows().map(row => row.findAllByType('span')[0].props.children), [label, label])
-    assert.deepEqual(rows().map(row => row.findByType('button').props.disabled), [true, false])
-    const select = rows()[1].findByType('button').props.onClick
-    await act(async () => { select(); select() })
-    assert.equal(rows().length, 0)
-    assert.equal(button('刷新付款方式').props.disabled, true)
-    const selections = calls.filter(x => x.method === 'paymentH5Methods' && x.payload.operation === 'select')
-    assert.equal(selections.length, 1)
-    assert.deepEqual(selections[0].payload, { platformId: 'taobao', accountRef: first, orderRef: first, h5Ref: first, operation: 'select', methodRef: methodB })
-    await act(async () => selecting.resolve(cashierMethods(selections[0].payload, methods.map(method => ({ ...method, selected: method.methodRef === methodB })))))
-    assert.deepEqual(rows().map(row => row.findByType('button').props.disabled), [false, true])
-    assert.deepEqual(rows().map(row => row.findAllByProps({ role: 'status' }).map(child => text(child.props.children))), [[], ['当前已选']])
-    assert(text(mounted.renderer.toJSON()).includes('当前收银台金额 · ¥46.90'))
-    await act(async () => root.findByType('form').props.onSubmit({ preventDefault() {} }))
-    assert(!JSON.stringify(storage).includes(methodB)); assert(!JSON.stringify(mutations).includes(methodB))
-    assert(!calls.some(x => ['paymentH5Submit', 'submit', 'paymentPay'].includes(x.method)))
-  } finally { mounted.close() }
-})
-
-test('failed payment method selection clears old choices until an explicit refresh and never echoes backend errors', async () => {
-  const mounted = await mountInlineSettings(() => ok({ state: 'ready', submitted: false }), {
-    paymentMethods: payload => payload.operation === 'select' ? { ok: false, error: { message: 'synthetic-private-method-error' } }
-      : cashierMethods(payload, [{ methodRef: methodA, label: '银行卡', selected: false }]),
-  })
-  try {
-    const { button, calls } = mounted
+    assert(text(mounted.renderer.toJSON()).includes('银行卡读取失败'))
+    assert(!text(mounted.renderer.toJSON()).includes('检查完成：当前没有'))
+    bankState = 'available'
     await act(async () => button('刷新付款方式').props.onClick())
-    await act(async () => button('选择此方式').props.onClick())
-    assert.equal(button('选择此方式'), undefined)
-    assert(text(mounted.renderer.toJSON()).includes('旧列表已清空'))
-    assert(!text(mounted.renderer.toJSON()).includes('synthetic-private-method-error'))
-    assert.deepEqual(calls.filter(x => x.method === 'paymentH5Methods').map(x => x.payload.operation), ['list', 'select'])
-    await act(async () => button('刷新付款方式').props.onClick())
-    assert(button('选择此方式'))
-    assert(!text(mounted.renderer.toJSON()).includes('旧列表已清空'))
-    assert(!calls.some(x => ['paymentH5Submit', 'submit', 'paymentPay'].includes(x.method)))
+    assert(text(mounted.renderer.toJSON()).includes('检查完成：当前没有'))
   } finally { mounted.close() }
 })
 
-test('switching accounts discards late method selection and does not read methods for the new account automatically', async () => {
-  const delayed = deferred()
-  const mounted = await mountInlineSettings(() => ok({ state: 'ready', submitted: false }), {
-    paymentMethods: payload => payload.operation === 'select' ? delayed.promise : cashierMethods(payload, [{ methodRef: methodA, label: '旧账户银行卡', selected: false }]),
-  })
+
+test('confirmed Alipay login automatically replaces stale card verification results', async () => {
+  const accountRef = '11111111-1111-4111-8111-111111111111'
+  let signedIn = false, cardQueries = 0
+  const mounted = await mount({ async call(_channel, method) {
+    if (method === 'accountsList') return ok({ viewAccountRef: accountRef, accounts: [{ ref: accountRef, nickname: '测试账号' }] })
+    if (method === 'paymentLogin') return ok({ state: signedIn ? 'signed-in' : 'signed-out', loginRef: 'synthetic-login' })
+    if (method === 'paymentPreferences') {
+      cardQueries++
+      return ok({ preferredLabel: null, bankState: signedIn ? 'available' : 'verification-required', methods: signedIn ? [{ methodRef: 'synthetic-card', label: '测试银行（尾号 1234）' }] : [] })
+    }
+    return method === 'profile' ? ok(profile) : ok({ authenticated: true, state: 'logged-in' })
+  } })
   try {
-    const { button, root, first, second, calls } = mounted
-    await act(async () => button('刷新付款方式').props.onClick())
-    await act(async () => button('选择此方式').props.onClick())
-    const request = calls.find(x => x.method === 'paymentH5Methods' && x.payload.operation === 'select').payload
-    const selector = root.findAll(node => node.type === 'span' && node.props.className === 'waimai-choice' && node.props.selectedId === first)[0]
-    await act(async () => selector.props.onSelect(second))
-    await act(async () => delayed.resolve(cashierMethods(request, [{ methodRef: methodA, label: '旧账户银行卡', selected: true }])))
-    assert.equal(button('刷新付款方式'), undefined)
-    assert(!text(mounted.renderer.toJSON()).includes('旧账户银行卡'))
-    assert(!calls.some(x => x.method === 'paymentH5Methods' && x.payload.accountRef === second))
-    assert(!calls.some(x => ['paymentH5Submit', 'submit', 'paymentPay'].includes(x.method)))
+    const button = label => mounted.renderer.root.findAllByType('button').find(node => (node.props['aria-label'] || text(node.props.children)) === label)
+    await act(async () => button('支付配置').props.onClick())
+    assert(text(mounted.renderer.toJSON()).includes('请先完成支付宝登录'))
+    const before = cardQueries
+    signedIn = true
+    await act(async () => button('刷新登录状态').props.onClick())
+    assert(cardQueries > before)
+    assert(button('设为默认 · 测试银行（尾号 1234）'))
+    assert(!text(mounted.renderer.toJSON()).includes('请先完成支付宝登录'))
+    const after = cardQueries
+    await act(async () => button('刷新登录状态').props.onClick())
+    assert.equal(cardQueries, after)
   } finally { mounted.close() }
 })
 
-test('phone login shows official agreements and requires explicit current consent before sending only the agreement reference', async () => {
-  const response = deferred(), storage = [], mutations = []
-  const agreementRef = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa'
-  const agreements = [{ name: '支付宝隐私协议', url: 'https://render.alipay.com/p/f/agreement-test.html' },
-    { name: '<b>登录服务协议</b>', url: 'https://render.alipay.com/p/f/login-agreement-test.html' }]
-  const mounted = await mountInlineSettings(payload => payload.operation === 'phone' ? response.promise
-    : inlineProgress({ kind: 'phone', agreementRef, agreements }), {
-    storage: { getItem: () => null, setItem: (...value) => storage.push(value) }, mutate: async ops => { mutations.push(ops); return true },
-  })
+
+test('background login checks preserve the verified heading and selected funding rows', async () => {
+  const accountRef = '11111111-1111-4111-8111-111111111111'
+  let finish, delayed = false
+  const mounted = await mount({ async call(_channel, method) {
+    if (method === 'accountsList') return ok({ viewAccountRef: accountRef, accounts: [{ ref: accountRef, nickname: '测试账号' }] })
+    if (method === 'paymentLogin') return delayed ? new Promise(resolve => { finish = () => resolve(ok({ state: 'signed-in', loginRef: 'new-session' })) }) : ok({ state: 'signed-in', loginRef: 'initial-session' })
+    if (method === 'paymentPreferences') return ok({ preferredLabel: '余额宝', fundingType: 'yuebao', bankState: 'available', methods: [] })
+    return method === 'profile' ? ok(profile) : ok({ authenticated: true, state: 'logged-in' })
+  } })
   try {
-    const { root, input, button, calls, first } = mounted
-    const checkbox = () => root.findAll(node => node.type === 'span' && node.props.label === '我已阅读并同意以上协议')[0]
-    assert.equal(checkbox().props.checked, false)
-    const links = root.findAllByType('a').filter(node => agreements.some(agreement => agreement.url === node.props.href))
-    assert.deepEqual(links.map(node => ({ name: node.props.children, url: node.props.href })), agreements)
-    assert(links.every(node => node.props.target === '_blank' && node.props.rel === 'noopener noreferrer'))
-    assert.deepEqual({ agreements: links.map(node => ({ name: node.props.children, url: node.props.href })),
-      consent: checkbox().props.checked, submitDisabled: button('下一步').props.disabled },
-    JSON.parse(await readFile(new URL('./fixtures/settings-login-agreements.json', import.meta.url), 'utf8')))
-    await act(async () => input('支付宝手机号').props.onChange({ target: { value: '13800000000' } }))
-    assert.equal(button('下一步').props.disabled, true)
-    await act(async () => { button('下一步').props.onClick(); input('支付宝手机号').props.onKeyDown({ key: 'Enter', preventDefault() {}, stopPropagation() {} }) })
-    assert.equal(calls.filter(x => x.payload.operation === 'phone').length, 0)
-    await act(async () => checkbox().props.onChange(true))
-    assert.equal(button('下一步').props.disabled, false)
-    await act(async () => { button('下一步').props.onClick(); button('下一步').props.onClick() })
-    assert.equal(input('支付宝手机号').props.value, '')
-    assert.equal(checkbox().props.checked, false)
-    const sent = calls.filter(x => x.payload.operation === 'phone')
-    assert.equal(sent.length, 1)
-    assert.deepEqual(sent[0].payload, { platformId: 'taobao', orderRef: first, accountRef: first, h5Ref: first, operation: 'phone', phone: '13800000000', agreementRef })
-    await act(async () => response.resolve(inlineProgress({ kind: 'sms', codeLength: 4 })))
-    assert(input('支付宝短信验证码'))
-    await act(async () => root.findByType('form').props.onSubmit({ preventDefault() {} }))
-    assert(!JSON.stringify(storage).includes(agreementRef)); assert(!JSON.stringify(mutations).includes(agreementRef))
-    assert(!calls.some(x => ['paymentH5Submit', 'submit', 'paymentPay'].includes(x.method)))
+    const button = label => mounted.renderer.root.findAllByType('button').find(node => (node.props['aria-label'] || text(node.props.children)) === label)
+    await act(async () => button('支付配置').props.onClick())
+    const funding = mounted.renderer.root.findByProps({ className: 'waimai-funding-card' })
+    delayed = true
+    await act(async () => { void button('刷新登录状态').props.onClick() })
+    assert(text(mounted.renderer.toJSON()).includes('支付宝已登录'))
+    assert(button('设为默认 · 余额宝').props['aria-pressed'])
+    await act(async () => finish())
+    assert.equal(mounted.renderer.root.findByProps({ className: 'waimai-funding-card' }), funding)
   } finally { mounted.close() }
 })
 
-test('new phone agreements clear prior consent, missing agreement references block submission and agreement-free login stays unchanged', async () => {
-  let step = 0
-  const oldRef = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa', newRef = 'bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb'
-  const agreements = [{ name: '官方协议', url: 'https://render.alipay.com/p/f/agreement-test.html' }]
-  const mounted = await mountInlineSettings(payload => {
-    if (payload.operation === 'refresh') step++
-    return inlineProgress({ kind: 'phone', ...(step < 3 ? { agreements } : {}), ...(step < 2 ? { agreementRef: step ? newRef : oldRef } : {}) })
-  })
+
+test('payment choices refresh automatically without clearing the saved choice on a failed read', async () => {
+  const accountRef = '11111111-1111-4111-8111-111111111111', timers = new Map()
+  let next = 0, fail = false, reads = 0
+  const mounted = await mount({ async call(_channel, method) {
+    if (method === 'accountsList') return ok({ viewAccountRef: accountRef, accounts: [{ ref: accountRef, nickname: '测试账号' }] })
+    if (method === 'paymentLogin') return ok({ state: 'signed-in', loginRef: 'synthetic' })
+    if (method === 'paymentPreferences') { reads++; if (fail) throw Error('temporary read failure'); return ok({ preferredLabel: '测试银行（尾号 1234）', bankState: 'available', methods: [{methodRef:'synthetic-card',label:'测试银行（尾号 1234）'}] }) }
+    return method === 'profile' ? ok(profile) : ok({ authenticated: true, state: 'logged-in' })
+  } }, {setInterval: (fn, ms) => {const id=++next;timers.set(id,{fn,ms});return id},clearInterval:id=>timers.delete(id)})
   try {
-    const { root, input, button, calls } = mounted
-    const checkbox = () => root.findAll(node => node.type === 'span' && node.props.label === '我已阅读并同意以上协议')[0]
-    await act(async () => checkbox().props.onChange(true))
-    await act(async () => button('刷新验证状态').props.onClick())
-    assert.equal(checkbox().props.checked, false)
-    await act(async () => input('支付宝手机号').props.onChange({ target: { value: '13800000000' } }))
-    assert.equal(button('下一步').props.disabled, true)
-    await act(async () => checkbox().props.onChange(true))
-    await act(async () => button('下一步').props.onClick())
-    assert.equal(calls.filter(x => x.payload.operation === 'phone').at(-1).payload.agreementRef, newRef)
-    assert.equal(checkbox().props.checked, false)
-    await act(async () => button('刷新验证状态').props.onClick())
-    assert.equal(checkbox().props.disabled, true)
-    await act(async () => input('支付宝手机号').props.onChange({ target: { value: '13800000000' } }))
-    assert.equal(button('下一步').props.disabled, true)
-    await act(async () => button('刷新验证状态').props.onClick())
-    assert.equal(checkbox(), undefined)
-    await act(async () => input('支付宝手机号').props.onChange({ target: { value: '13800000000' } }))
-    assert.equal(button('下一步').props.disabled, false)
-    await act(async () => button('下一步').props.onClick())
-    assert.equal(Object.hasOwn(calls.filter(x => x.payload.operation === 'phone').at(-1).payload, 'agreementRef'), false)
-  } finally { mounted.close() }
+    const button = label => mounted.renderer.root.findAllByType('button').find(node => (node.props['aria-label'] || text(node.props.children)) === label)
+    await act(async () => button('支付配置').props.onClick())
+    const before=reads
+    assert.equal(mounted.renderer.root.findAll(node => typeof node.props.className === 'string' && node.props.className.split(' ').includes('waimai-funding-icon')).length,3)
+    assert(button('设为默认 · 测试银行（尾号 1234）').props['aria-pressed'])
+    fail=true
+    await act(async () => {for(const timer of timers.values()) if(timer.ms===60000) timer.fn()})
+    assert(reads>before)
+    assert(button('设为默认 · 测试银行（尾号 1234）').props['aria-pressed'])
+    assert(button('设为默认 · 测试银行（尾号 1234）').props.disabled)
+    assert.equal(text(button('刷新付款方式').props.children),'')
+  } finally {mounted.close()}
 })

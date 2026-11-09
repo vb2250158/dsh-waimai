@@ -153,3 +153,23 @@ test('Hema agent quote uses explicit cart lines and returns a private-address-fr
   await assert.rejects(call('submit_order', { platformId: 'hema', accountRef: ref, maxAmount: 25 }), error => error.code === 'bad-request')
   assert.equal(calls.length, 2)
 })
+
+test('H5 MCP tools expose progress without secrets and require confirmed payment arguments', async () => {
+  const calls=[]
+  const call=tools(async (method,args)=>{calls.push({method,args});return {orderRef:ref,h5Ref:ref,amountCents:300,state:'requires-password',submitted:false,verificationRequired:false,password:'secret',cookies:['secret'],paymentUrl:'https://private.invalid/'}})
+  const args={accountRef:ref,orderRef:ref,confirmed:true,confirmedCents:300,maxAmountCents:5000}
+  const result=await call('prepare_h5_payment',args)
+  assert.equal(calls[0].method,'paymentH5Start')
+  assert.deepEqual(calls[0].args.cookies,[])
+  assert.equal(result.nextAction,'complete-private-verification')
+  assert.equal(result.view,'payment')
+  assert(!JSON.stringify(result).includes('secret'))
+  assert(!JSON.stringify(result).includes('private.invalid'))
+  await call('get_h5_payment_status',{accountRef:ref,orderRef:ref})
+  assert.equal(calls.at(-1).method,'paymentH5Status')
+  await call('continue_h5_payment',args)
+  assert.equal(calls.at(-1).method,'paymentH5Continue')
+  await assert.rejects(call('continue_h5_payment',{...args,password:'123456'}))
+  await assert.rejects(call('continue_h5_payment',{...args,confirmed:false}))
+  assert.equal(calls.length,3)
+})

@@ -20,6 +20,24 @@ function fixture(replies) {
   return { client, calls }
 }
 
+test('saved payment identity matches a fresh session without reusing refs or silently choosing another card', async () => {
+  const first = fixture([ready()])
+  await first.client.initialize()
+  const view = await first.client.methods()
+  const preference = first.client.paymentPreference(view.methods[1].methodRef)
+  assert.equal(Object.hasOwn(preference, 'methodRef'), false)
+  const second = fixture([ready(), ready({ combinationIndex: 'combo-card' })])
+  await second.client.initialize()
+  await second.client.applyPreference(preference)
+  assert.equal(second.calls.length, 2)
+  assert.equal(second.calls[1].options.data.selected_channel, 'test-card')
+  assert(!second.calls.some(call => /cashierPay\.json/.test(call.url)))
+  const unavailable = fixture([ready({ channelInfo: { payments: [method('different-card', 'combo-card', { tail: '1234567812345678' })] } })])
+  await unavailable.client.initialize()
+  await assert.rejects(unavailable.client.applyPreference(preference), { code: 'payment-preference-unavailable' })
+  assert.equal(unavailable.calls.length, 1)
+})
+
 test('method labels and references expose no provider identifier or full card tail; malformed items do not hide usable choices', async () => {
   const { client, calls } = fixture([ready({ channelInfo: { payments: [...choices(), null,
     method('test-action', 'combo-action', { action: '/cashierPay' }), method('test-disabled', 'combo-disabled', { disable: true }),
@@ -134,4 +152,84 @@ test('unverified, already-submitted or unfamiliar list states cannot be used for
     { success: true, data: { controlType: 'unified_login', bizData: { payments: choices() } } }])
   await invalid.client.initialize()
   await assert.rejects(invalid.client.methods(), { code: 'h5-method-unconfirmed' })
+})
+
+test('preset source matches only one verified standalone funding choice and never submits payment', async () => {
+  for (const [fundingType, name] of [['balance', '支付宝余额'], ['yuebao', '余额宝']]) {
+    const payments = [method('observed-source', 'combo-balance', { name })]
+    const f = fixture([ready({ channelInfo: { payments } }), ready({ channelInfo: { payments } })])
+    await f.client.initialize()
+    await f.client.applyPreference({ fundingType, label: name })
+    assert.equal(f.calls[1].options.data.selected_channel, 'observed-source')
+    assert(!f.calls.some(call => /cashierPay\.json/.test(call.url)))
+    for (const invalid of [[], [...payments, method('other', 'combo-other', { name })],
+      [method('new', 'combo-new', { name, pwdValidateType: 'newCard' })],
+      [method('disabled', 'combo-disabled', { name, disable: true })]]) {
+      const blocked = fixture([ready({ channelInfo: { payments: invalid } })])
+      await blocked.client.initialize()
+      await assert.rejects(blocked.client.applyPreference({ fundingType, label: name }), { code: 'payment-preference-unavailable' })
+      assert.equal(blocked.calls.length, 1)
+    }
+  }
+})
+
+test('bank group cards show their own last four digits and saved identity selects the same card after reordering', async () => {
+  const payments = [{ value: 'bank-group', name: '测试银行', children: [
+    { parentValue: 'bank-group', childValue: 'card-a', tail: '1234', params: { combinationIndex: 'combo-a' } },
+    { parentValue: 'bank-group', childValue: 'card-b', tail: '5678', params: { combinationIndex: 'combo-b' } },
+  ] }]
+  const first = fixture([ready({ channelInfo: { payments }, combinationIndex: 'combo-a' })])
+  await first.client.initialize()
+  const view = await first.client.methods()
+  assert.deepEqual(view.methods.map(item => item.label), ['测试银行（尾号 1234）', '测试银行（尾号 5678）'])
+  const saved = first.client.paymentPreference(view.methods[1].methodRef)
+  payments[0].children.reverse()
+  const second = fixture([ready({ channelInfo: { payments }, combinationIndex: 'combo-a' }), ready({ combinationIndex: 'combo-b' })])
+  await second.client.initialize()
+  await second.client.applyPreference(saved)
+  assert.equal(second.calls[1].options.data.child_channel, 'card-b')
+  assert.equal(second.client.submitted, false)
+})
+
+
+test('bank preference uses same cashier jar and fresh channel ids, never the binding id', async () => {
+  const pref = { kind: 'bank-binding', bankCode: 'TEST', bankName: '测试银行', lastFour: '5678', cardType: 'DC', bindingId: 'private-binding' }
+  const payments = [method('fresh-channel', 'fresh-combination', { name: '测试银行', tail: '5678' })]
+  const f = fixture([ready({ channelInfo: { payments } }), ready({ combinationIndex: 'fresh-combination' })])
+  let reads = 0
+  f.client.http.get = async (url, options) => {
+    reads++
+    assert.equal(url, 'https://zht.alipay.com/asset/bindQuery.json')
+    assert.equal(options.maxRedirects, 0)
+    return { status: () => 200, headers: () => ({ 'content-type': 'application/json' }),
+      body: async () => Buffer.from(JSON.stringify({ stat: 'ok', results: [{ partnerId: 'TEST', providerName: '测试银行', providerUserName: '5678', cardType: 'DC', signId: 'private-binding' }] })), dispose: async () => {} }
+  }
+  await f.client.initialize()
+  await f.client.applyPreference(pref)
+  assert.equal(reads, 1)
+  assert.equal(f.calls[1].options.data.selected_channel, 'fresh-channel')
+  assert(!JSON.stringify(f.calls).includes('private-binding'))
+  assert.equal(f.client.submitted, false)
+  await f.client.close()
+})
+
+test('bank preference rejects missing bindings, duplicate tails and ambiguous cashier choices without selection', async () => {
+  const pref = { kind: 'bank-binding', bankCode: 'TEST', bankName: '测试银行', lastFour: '5678', cardType: 'DC', bindingId: 'binding-one' }
+  const card = { partnerId: 'TEST', providerName: '测试银行', providerUserName: '5678', cardType: 'DC', signId: 'binding-one' }
+  const option = method('channel-one', 'combo-one', { name: '测试银行', tail: '5678' })
+  for (const [cards, payments] of [
+    [[], [option]],
+    [[{ ...card, signId: 'different-owner' }], [option]],
+    [[card, { ...card, signId: 'binding-two' }], [option]],
+    [[card], [option, method('channel-two', 'combo-two', { name: '测试银行', tail: '5678' })]],
+    [[card], [method('other', 'combo-other', { name: '其他银行', tail: '5678' })]],
+  ]) {
+    const f = fixture([ready({ channelInfo: { payments } })])
+    f.client.http.get = async () => ({ status: () => 200, headers: () => ({ 'content-type': 'application/json' }), body: async () => Buffer.from(JSON.stringify({ stat: 'ok', results: cards })), dispose: async () => {} })
+    await f.client.initialize()
+    await assert.rejects(f.client.applyPreference(pref), { code: 'h5-card-mapping-required' })
+    assert.equal(f.calls.length, 1)
+    assert.equal(f.client.submitted, false)
+    await f.client.close()
+  }
 })

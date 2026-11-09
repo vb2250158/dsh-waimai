@@ -2,6 +2,11 @@
 
 ## 0.9.0 — Unreleased
 
+- Add private, account-scoped Alipay QR sign-in before ordering, including preview mode. Verify the protected official return page, keep cookies in memory, and reuse authentication only through the existing order cashier; sign-in never creates orders or pays.
+
+- Serve the same account, cart, ordering and payment-verification UI independently and through the authenticated DSH `/waimai-app/` entry. Keep browser sessions separate from MCP credentials, reuse strict RPC validation, and read limits from the service.
+- Pin MCP SDK 1.32.2 and Zod 4.6.7; update the local transitive dependency resolution to patched versions. Preserve upstream UI and bundled dependency license notices.
+
 - Add an independently launched, authenticated loopback MCP service with a single account owner shared by DSH and other Agents. Separate public tools from the private Host endpoint and reject cross-endpoint credentials.
 - Add optional DSH service attachment without stopping the standalone service on adapter reload. Deployment owns service configuration; see `docs/standalone-mcp.md` for setup and migration restrictions.
 - Exclusively lease the account directory and release it on graceful stdio shutdown. Interrupted processes require inspection before recovering a stale lease; unknown payment records remain authoritative.
@@ -512,3 +517,13 @@
 - MCP 子进程由 Host 半持有，而非 `@deepseek-ai/dsh-mcp-client` 插件行：Loader 的 `!!js` 求值环境没有 `require` 或 `import.meta`，相对 `args` 又按 DSH 进程工作目录解析，插件行无法定位本包的服务端文件。
 - 定时使用 `ctx.timer.interval` 轮询：本 Harness 的 `TimerService` 不提供 `cron()`。
 - 无构建步骤：`lib/` 即发布产物。
+
+### Daily payment accounting
+
+- Order creation and unknown order attempts no longer consume the daily payment budget. Cashier submission checks confirmed paid amounts, including H5 continuation; successful payment confirmation persists its accounting timestamp. Existing attempt records and duplicate-payment checks remain intact.
+- Standalone service logs retain allowlisted backend diagnostic stages and return codes without raw credentials or provider payloads.
+
+### Restaurant delivery identity
+
+- Restaurant checkout now resolves the existing platform address link, retains the Eleme address ID, sends the linked address ID and type in their separate fields, and validates both IDs in the returned quote.
+- A trade cookie from a different verified business session stops checkout; failed submissions retain safe provider codes without forwarding private response text.

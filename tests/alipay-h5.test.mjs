@@ -213,3 +213,12 @@ test('original handoff follows only validated Alipay redirects and does not eval
   await assert.rejects(resolveH5Entry(http, entryUrl, 1000), { code: 'h5-entry-invalid' })
   assert.equal(calls.length, 4)
 })
+
+
+test('an account bank binding cannot be treated as a cashier channel identifier', async () => {
+  const { client, calls } = setup([preconfirm()])
+  await client.initialize()
+  await assert.rejects(client.applyPreference({ kind: 'bank-binding', bankCode: 'TEST', bankName: '测试银行', lastFour: '1234', cardType: 'DC', bindingId: 'synthetic-binding', label: '测试银行（尾号 1234）' }), { code: 'h5-card-mapping-required' })
+  assert.equal(calls.length, 1)
+  assert.equal(client.summary().submitted, false)
+})

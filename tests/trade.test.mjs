@@ -20,9 +20,9 @@ function quoteRaw(cart = cartData(cartRaw(), 'store-17'), total = 2100) {
   const quantity = cart.display.quantity
   return { data: {
     trade_checkout_global: component({ userId: '87654', uniqueId: 'synthetic-id', checkoutParamStr: JSON.stringify({
-      checkOutBizParam: { address_id: 'uic-77', selectedAdditionalServiceIds: [] }, checkOutItemParam: { encryptedShopId: 'store-17',
+      checkOutBizParam: { address_id: '77', selectedAdditionalServiceIds: [] }, checkOutItemParam: { encryptedShopId: 'store-17',
         entities: cart.lines.map(item => ({ itemId: item.tb_item_id, skuId: item.tb_sku_id, buyAmount: item.quantity })) } }) }),
-    trade_checkout_order_submit: component({ addressId: 'uic-77', orderTotalFee: total, priceStr: String(total / 100), goodsTotalQuantity: quantity, isClosed: false, discountedPrice: 0 }),
+    trade_checkout_order_submit: component({ addressId: '77', orderTotalFee: total, priceStr: String(total / 100), goodsTotalQuantity: quantity, isClosed: false, discountedPrice: 0 }),
     trade_checkout_subtotal: component({ centPrice: total }),
     trade_checkout_restaurant_info: component({ name: '示例店', totalQuantity: quantity, statusTip: { text: '明天 10:00 开始配送' },
       foodList: cart.lines.map(item => ({ name: item.name, quantity: item.quantity, price: item.price, spec: '' })) }),
@@ -31,12 +31,12 @@ function quoteRaw(cart = cartData(cartRaw(), 'store-17'), total = 2100) {
     tracking_only: { fields: { privateTracking: 'synthetic-tracking' }, props: { isSubmit: 'false' } },
   }, ext: { linkage: { submit: zip({ buyerId: '87654', orderDTOs: [{ sellerId: 'synthetic-seller' }],
     cashierPaymentDTO: { payOrderAmount: total, payCurrency: 'CNY', orderCurrency: 'CNY' } }),
-    adjust: zip({ tradeBuyQuery: { userId: '87654' }, extraParams: { checkoutAddressInfo: JSON.stringify({ selectedEleAddressId: '77' }) } }) } } }
+    adjust: zip({ tradeBuyQuery: { userId: '87654' }, extraParams: { checkoutAddressInfo: JSON.stringify({ selectedEleAddressId: '77', selectedUicAddressId: '177' }) } }) } } }
 }
 
 test('server quote snapshot projects fees, timing and cents; submit uses only server-selected components', async () => {
   const cart = cartData(cartRaw(), 'store-17'), raw = quoteRaw(cart)
-  const result = checkoutData(raw, { buyerId: '87654', addressId: '77', shopId: 'store-17', cart })
+  const result = checkoutData(raw, { buyerId: '87654', addressId: '77', uicAddressId: '177', shopId: 'store-17', cart })
   assert.deepEqual(result.display, JSON.parse(await readFile(new URL('./fixtures/trade-quote.expected.json', import.meta.url), 'utf8')))
   const params = JSON.parse(gunzipSync(Buffer.from(result.request.params, 'base64')).toString())
   assert(!params.tracking_only); assert.equal(result.request.linkage, raw.ext.linkage.submit)
@@ -45,7 +45,7 @@ test('server quote snapshot projects fees, timing and cents; submit uses only se
 })
 
 test('foreign buyer/address/SKU, contradictory amount, extra service and closed store quotes cannot be submitted', () => {
-  const cart = cartData(cartRaw(), 'store-17'), owner = { buyerId: '87654', addressId: '77', shopId: 'store-17', cart }
+  const cart = cartData(cartRaw(), 'store-17'), owner = { buyerId: '87654', addressId: '77', uicAddressId: '177', shopId: 'store-17', cart }
   for (const mutate of [
     raw => { raw.data.trade_checkout_global.fields.userId = '999' },
     raw => { raw.ext.linkage.adjust = zip({ tradeBuyQuery: { userId: '87654' }, extraParams: { checkoutAddressInfo: '{"selectedEleAddressId":"88"}' } }) },
@@ -71,7 +71,7 @@ async function fixture(options = {}) {
   let chain = Promise.resolve()
   const login = { protocol: Object.fromEntries(['menuHead', 'menu', 'itemOptions', 'cart', 'checkout', 'submit', 'taobaoIdentity'].map(api => [api, { api }])),
     http: { async storageState() { return { cookies: [{ name: 'unb', domain: '.ele.me', value: '87654' }, { name: 'unb', domain: '.taobao.com', value: '98765' }] } } },
-    get accountId() { return accountId }, async requireAccount() {},
+    get accountId() { return accountId }, havanaId: '87654', async requireAccount() {},
     run(operation) { const promise = chain.then(operation); chain = promise.catch(() => {}); return promise },
     async mtop(spec, payload, retry) {
       calls.push({ api: spec.api, payload, retry })
@@ -89,11 +89,13 @@ async function fixture(options = {}) {
         raw.total_quantity = raw.couple_group[0].cart_item_d_t_o_list.reduce((sum, item) => sum + item.quantity, 0)
         return { ret: ['SUCCESS::ok'], data: structuredClone(raw) }
       }
+      if (spec.api === 'addresses') return { ret: ['SUCCESS::ok'], data: { addressList: [{ id_string: '77', address_id_string: '177' }] } }
       if (spec.api === 'taobaoIdentity') return { ret: ['SUCCESS::ok'], data: { userNumId: '98765' } }
       if (spec.api === 'checkout') return { ret: ['SUCCESS::ok'], data: quoteRaw(cartData(raw, 'store-17'), checkoutTotal) }
       if (spec.api === 'submit') { if (rejectSubmit) throw Error('timeout'); return { ret: ['SUCCESS::ok'], data: { bizOrderId: '123456', nextUrl: 'https://r.ele.me/payment?synthetic=1' } } }
       throw Error('unexpected endpoint')
     } }
+  login.protocol.retail = { addressQuery: { api: 'addresses' } }
   const service = { login, async selectedAddress(ref) { if (ref !== undefined && ref !== selected.ref) throw Error('stale address'); return selected },
     checkReply(raw) { assert(raw.ret.some(value => value.startsWith('SUCCESS::'))) } }
   const trade = new TaobaoTrade(service, { journalDirectory: directory, dryRun: false, now: () => now, ...options })
@@ -180,8 +182,8 @@ test('each newly authorized retry must name the latest unknown attempt and prese
   } finally { await f.close() }
 })
 
-test('a new retry cannot increase the last attempt amount or exceed the daily reserved budget', async () => {
-  for (const scenario of ['amount', 'budget']) {
+test('a new retry cannot increase the last attempt amount', async () => {
+  for (const scenario of ['amount']) {
     const f = await fixture({ budget: scenario === 'budget' ? 42 : 0 })
     try {
       f.rejectSubmit()
@@ -352,14 +354,14 @@ test('uncertain order remains reserved after restart and an identical cart canno
   } finally { await f.close() }
 })
 
-test('confirmed and uncertain orders count toward the shared daily cap', async () => {
+test('unpaid orders do not consume the daily payment budget', async () => {
   const f = await fixture({ budget: 40 })
   try {
     await f.trade.submit(submitArgs(await getQuote(f)))
     f.raw.couple_group[0].cart_item_d_t_o_list[0].update_at = 200000
     const next = await getQuote(f)
-    await assert.rejects(f.trade.submit(submitArgs(next)), error => error.code === 'over-budget')
-    assert.equal(f.calls.filter(call => call.api === 'submit').length, 1)
+    await f.trade.submit(submitArgs(next))
+    assert.equal(f.calls.filter(call => call.api === 'submit').length, 2)
   } finally { await f.close() }
 })
 
@@ -446,4 +448,88 @@ test('private manual confirmation can submit during automation preview but stays
       assert.equal(f.trade.dryRun, true)
     } finally { await f.close() }
   }
+})
+
+test('a confirmed absent-order retry is not charged to the daily payment budget', async () => {
+  const f = await fixture({ budget: 21 })
+  try {
+    f.rejectSubmit()
+    const first = await getQuote(f)
+    await assert.rejects(f.trade.submit(submitArgs(first)), { code: 'order-unknown' })
+    const next = await getQuote(f)
+    await assert.rejects(f.trade.submit({ ...submitArgs(next), retryOf: first.quoteRef,
+      previousOrderAbsent: true, manualConfirmation: true }), { code: 'order-unknown' })
+    assert.equal((await f.trade.journal()).attempts.length, 2)
+    assert.equal(f.calls.filter(call => call.api === 'submit').length, 2)
+  } finally { await f.close() }
+})
+
+test('distinct Taobao and Eleme identities are valid but a foreign trade cookie stops checkout', async () => {
+  const f = await fixture()
+  try {
+    assert.deepEqual(await f.trade.buyer(), { taobaoId: '98765', buyerId: '87654' })
+    f.service.login.havanaId = '11111'
+    await assert.rejects(getQuote(f), { code: 'trade-account-mismatch' })
+    assert.equal(f.calls.filter(call => call.api === 'checkout' || call.api === 'submit').length, 0)
+  } finally { await f.close() }
+})
+
+test('submit address failure retains safe platform code without exposing the platform message or losing the attempt', async () => {
+  const f = await fixture()
+  try {
+    const original = f.service.login.mtop.bind(f.service.login)
+    f.service.login.mtop = (spec, ...args) => spec.api === 'submit'
+      ? Promise.resolve({ ret: ['B_10006_01_18_026::地址错误 private-token 13812345678'], data: {} })
+      : original(spec, ...args)
+    await assert.rejects(f.trade.submit(submitArgs(await getQuote(f))), error => {
+      assert.equal(error.code, 'order-unknown')
+      assert.match(error.message, /B_10006_01_18_026/)
+      assert.match(error.message, /地址校验相关/)
+      assert(!error.message.includes('private-token'))
+      assert(!error.message.includes('13812345678'))
+      return true
+    })
+    assert.equal((await f.trade.journal()).attempts[0].status, 'unknown')
+  } finally { await f.close() }
+})
+
+test('restaurant checkout resolves the platform address link instead of substituting the Eleme ID', async () => {
+  const f = await fixture()
+  try {
+    await getQuote(f)
+    const extra = JSON.parse(f.calls.find(call => call.api === 'checkout').payload.exParams)
+    assert.equal(extra.bizInfo.addressId, '77')
+    assert.equal(extra.bizInfo.uicAddressIdForPadding, '177')
+    assert.equal(extra.bizInfo.addressType, '5')
+    assert.equal(JSON.parse(extra.checkoutAddressInfo).selectedEleAddressId, '77')
+    assert.equal(JSON.parse(extra.checkoutAddressInfo).selectedUicAddressId, '177')
+    assert.equal(JSON.parse(extra.checkoutAddressInfo).addressType, '5')
+  } finally { await f.close() }
+})
+
+test('missing or ambiguous platform address mappings stop restaurant checkout before a quote', async () => {
+  for (const rows of [[], [{ id_string: '77', address_id_string: '177' }, { id_string: '77', address_id_string: '178' }]]) {
+    const f = await fixture()
+    try {
+      const original = f.service.login.mtop.bind(f.service.login)
+      f.service.login.mtop = (spec, ...args) => spec.api === 'addresses'
+        ? Promise.resolve({ ret: ['SUCCESS::ok'], data: { addressList: rows } }) : original(spec, ...args)
+      await assert.rejects(getQuote(f), { code: 'retail-address-unmapped' })
+      assert(!f.calls.some(call => call.api === 'checkout' || call.api === 'submit'))
+    } finally { await f.close() }
+  }
+})
+
+test('restaurant quote rejects a mismatched linked address even when its displayed address agrees internally', () => {
+  const cart = cartData(cartRaw(), 'store-17'), owner = { buyerId: '87654', addressId: '77', uicAddressId: '177', shopId: 'store-17', cart }
+  const raw = quoteRaw(cart)
+  assert.throws(() => checkoutData(raw, { ...owner, uicAddressId: '178' }))
+  raw.ext.linkage.adjust = zip({ tradeBuyQuery: { userId: '87654' }, extraParams: { checkoutAddressInfo: JSON.stringify({ selectedEleAddressId: '77', selectedUicAddressId: '178' }) } })
+  assert.throws(() => checkoutData(raw, owner))
+})
+
+test('linked address IDs compare canonically across official numeric and string fields', () => {
+  const cart = cartData(cartRaw(), 'store-17'), raw = quoteRaw(cart)
+  raw.data.trade_checkout_order_submit.fields.addressId = 77
+  assert.equal(checkoutData(raw, { buyerId: '87654', addressId: '77', uicAddressId: '177', shopId: 'store-17', cart }).display.totalCents, 2100)
 })

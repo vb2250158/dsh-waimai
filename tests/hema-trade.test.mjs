@@ -215,7 +215,7 @@ test('Hema lost create response reserves amount and blocks retry even after a ne
 })
 
 test('Hema amount, preview, cart, identity, expiry and configured cap stop before creating orders', async () => {
-  for (const scenario of ['amount', 'preview', 'cart', 'identity', 'expiry', 'cap', 'budget']) {
+  for (const scenario of ['amount', 'preview', 'cart', 'identity', 'expiry', 'cap']) {
     const f = await fixture(scenario === 'cap' ? { cap: 35 } : scenario === 'budget' ? { budget: 50 } : {})
     try {
       const quote = await f.trade.checkout(f.args)

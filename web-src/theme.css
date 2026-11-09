@@ -1,0 +1,73 @@
+:root {
+  color-scheme: light dark;
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  --dsw-radius-md: 12px; --dsw-radius-sm: 7px; --dsw-radius-lg: 18px;
+  --dsw-alias-bg-base: #f5f4ef; --dsw-alias-bg-layer-1: #fff;
+  --dsw-alias-bg-layer-2: #eeede7; --dsw-alias-bg-layer-3: #e5e4de;
+  --dsw-alias-label-primary: #202b25; --dsw-alias-label-secondary: #5b665e;
+  --dsw-alias-label-tertiary: #6d776f; --dsw-alias-label-dimmed: #768078;
+  --dsw-alias-border-l1: #e7e9e2; --dsw-alias-border-l2: #dce0d7;
+  --dsw-alias-border-l3: #cbd2c5; --dsw-alias-border-l4: #b5c0b0;
+  --dsw-alias-state-business-primary: #25634c; --dsw-alias-state-error-primary: #b63a30;
+  --dsw-alias-state-success-primary: #2f7154; --dsw-alias-state-warning-primary: #a06b1d;
+  --dsw-alias-text-primary: var(--dsw-alias-label-primary); --dsw-alias-text-tertiary: var(--dsw-alias-label-secondary);
+  --dsw-elevation-prominent: 0 12px 40px #15241c26;
+}
+* { box-sizing: border-box }
+body { margin:0; background:var(--dsw-alias-bg-base); color:var(--dsw-alias-label-primary) }
+button,input,select { font:inherit }
+button { cursor:pointer }
+button:disabled { cursor:default; opacity:.6 }
+button:focus-visible,input:focus-visible,a:focus-visible { outline:2px solid var(--dsw-alias-state-business-primary); outline-offset:3px }
+.waimai-app { max-width:1080px; margin:auto; padding:36px 28px 100px; line-height:1.6 }
+.waimai-app-heading { display:flex; justify-content:space-between; align-items:center; gap:24px; margin-bottom:22px }
+.waimai-app h1 { font-size:32px; margin:0; letter-spacing:-.6px }
+.eyebrow { color:var(--dsw-alias-label-secondary); margin:0 0 6px; font-size:13px }
+.mode { padding:6px 14px; border:1px solid var(--dsw-alias-border-l3); border-radius:30px; font-size:13px }
+.limits { display:flex; flex-wrap:wrap; gap:12px 24px; padding:14px 0; margin-bottom:26px; border-top:1px solid var(--dsw-alias-border-l2); border-bottom:1px solid var(--dsw-alias-border-l2); color:var(--dsw-alias-label-secondary); font-size:13px }
+.sign-in { max-width:480px; margin:48px auto; display:flex; flex-direction:column; gap:18px; padding:28px; border:1px solid var(--dsw-alias-border-l2); border-radius:18px; background:var(--dsw-alias-bg-layer-1) }
+.sign-in h2,.sign-in p { margin:0 }
+.notice { display:flex; align-items:center; gap:16px; padding:12px; color:var(--dsw-alias-state-error-primary) }
+@media(prefers-color-scheme:dark) { :root {
+  --dsw-alias-bg-base:#171d19; --dsw-alias-bg-layer-1:#202923; --dsw-alias-bg-layer-2:#29352d; --dsw-alias-bg-layer-3:#35433a;
+  --dsw-alias-label-primary:#e6eee7; --dsw-alias-label-secondary:#b1beb3; --dsw-alias-label-tertiary:#9cae9e; --dsw-alias-label-dimmed:#91a394;
+  --dsw-alias-border-l1:#2c382f; --dsw-alias-border-l2:#3b4a3e; --dsw-alias-border-l3:#4a5d4f; --dsw-alias-border-l4:#5b7160;
+  --dsw-alias-state-business-primary:#8ad5a9; --dsw-alias-state-error-primary:#ff9d90; --dsw-alias-state-success-primary:#8ad5a9; --dsw-alias-state-warning-primary:#e4c17b;
+} }
+@media(max-width:600px) { .waimai-app {padding:24px 16px 90px} .waimai-app h1 {font-size:26px} .sign-in {margin:24px auto;padding:20px} }
+
+/* Payment status stays above policy settings and never shares the shopping login badge. */
+.waimai-payment-settings,.waimai-payment-steps,.waimai-funding-card { display:flex; flex-direction:column; gap:16px; }
+.waimai-payment-settings { margin-top:24px; }
+.waimai-payment-settings h3,.waimai-payment-settings p { margin:0; }
+.waimai-payment-steps { gap:18px; }
+.waimai-auth-card,.waimai-funding-card { padding:20px; border:1px solid var(--dsw-alias-border-l3); border-radius:14px; background:var(--dsw-alias-bg-layer-1); }
+.waimai-auth-card { border-left:4px solid var(--dsw-alias-state-warning-primary); display:flex; flex-direction:column; gap:16px; }
+.waimai-auth-card[data-state=success] { border-left-color:var(--dsw-alias-state-success-primary); }
+.waimai-auth-summary strong { font-size:21px; line-height:1.45; }
+.waimai-auth-summary p { margin-top:6px; color:var(--dsw-alias-label-secondary); font-size:14px; }
+.waimai-payment-settings .waimai-actions { display:flex; flex-wrap:wrap; gap:10px; justify-content:flex-start; }
+.waimai-payment-settings button { min-height:40px; padding:8px 14px; border:1px solid var(--dsw-alias-border-l3); border-radius:8px; background:var(--dsw-alias-bg-layer-2); color:var(--dsw-alias-label-primary); width:fit-content; }
+.waimai-payment-settings .waimai-auth-primary { background:var(--dsw-alias-state-business-primary); color:var(--dsw-alias-bg-base); font-weight:600; }
+.waimai-payment-settings button[aria-pressed=true] { border-color:var(--dsw-alias-state-success-primary); }
+.waimai-payment-settings .waimai-hint { font-size:13px; line-height:1.6; color:var(--dsw-alias-label-secondary); }
+@media(max-width:600px) { .waimai-auth-card,.waimai-funding-card { padding:16px; } .waimai-auth-summary strong { font-size:18px; } }
+
+.waimai-funding-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.waimai-funding-list { display:flex; flex-direction:column; border:1px solid var(--dsw-alias-border-l3); border-radius:12px; overflow:hidden; }
+.waimai-payment-settings .waimai-funding-row { display:flex; align-items:center; gap:14px; width:100%; min-height:64px; padding:12px 16px; border:0; border-bottom:1px solid var(--dsw-alias-border-l2); border-radius:0; background:transparent; text-align:left; }
+.waimai-payment-settings .waimai-funding-row:last-child { border-bottom:0; }
+.waimai-payment-settings .waimai-funding-row[aria-pressed=true] { background:var(--dsw-alias-bg-layer-2); box-shadow:inset 3px 0 var(--dsw-alias-state-business-primary); }
+.waimai-payment-settings .waimai-funding-row:disabled { opacity:1; }
+.waimai-funding-icon { width:38px; height:38px; display:grid; place-items:center; border-radius:10px; background:#dcece4; color:#25634c; flex-shrink:0; }
+.waimai-funding-icon[data-kind=balance] { background:#e2efff; color:#1677ff; }
+.waimai-funding-icon[data-kind=yuebao] { background:#fff0db; color:#ad5700; }
+.waimai-funding-name { flex:1; min-width:0; overflow-wrap:anywhere; line-height:1.5; }
+.waimai-funding-check { width:24px; flex-shrink:0; color:var(--dsw-alias-state-business-primary); font-size:21px; font-weight:700; }
+.waimai-payment-settings .waimai-refresh-icon { display:grid; place-items:center; width:36px; min-height:36px; padding:8px; background:transparent; border:0; }
+@media(max-width:600px) { .waimai-payment-settings .waimai-funding-row { padding:12px; gap:10px; } }
+
+.waimai-funding-icon.waimai-brand-icon { background:#fff; }
+.waimai-brand-icon img { width:24px; height:24px; object-fit:contain; }
+
+.waimai-funding-icon.waimai-yuebao-brand { background-color:#ffcd31; background-size:126px 48px; background-position:-8px -4px; background-repeat:no-repeat; }
