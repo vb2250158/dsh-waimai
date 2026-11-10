@@ -1,5 +1,7 @@
 # dsh-waimai
 
+Opening management, switching platforms or refreshing status does not request a sign-in QR code or send SMS. With no saved account, choose Add account, then explicitly request a QR code or SMS. An existing scan still verifies sign-in automatically. Leaving the scan view cancels that attempt; returning or reopening never starts a replacement automatically.
+
 The standalone `waimai-mcp-service` command serves authenticated loopback Streamable HTTP and a shared management UI at `/`. DSH can attach using `mcpServiceUrl` and `mcpServiceTokenFile`; public clients use `/mcp`, while the DSH UI uses `/host` with a separate token. DSH also hosts the shared UI at `/waimai-app/`. See [deployment instructions](docs/standalone-mcp.md). Live payment acceptance remains incomplete.
 
 `mcpNodeExecutable` selects the Node.js executable for the takeaway MCP child. It defaults to an empty string, which uses the Host's `process.execPath`. A deployment can provide a matching Node.js executable with its own Windows process name and icon. This setting does not modify executable resources, the system Node.js installation, the Host or other child processes. Configuration reloads replace the MCP process through the existing serial lifecycle; an active scheduled task finishes before the latest configuration applies. Clearing the path restores the Host interpreter. An explicit path that cannot start reports an MCP connection failure without selecting another interpreter.

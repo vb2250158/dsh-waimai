@@ -404,16 +404,17 @@ test('unsupported phone selections do not enter a Hema checkout or prevent choos
 
 test('Hema view uses explicit Taobao sign-in, private account scope and remote product search', async () => {
   const calls = [], ref = '11111111-1111-4111-8111-111111111111', source = '22222222-2222-4222-8222-222222222222', addressRef = 'a'.repeat(64)
-  let linked = false
+  let linked = false, adding = false
   let failNext = false
   let failCart = false, foreignCart = false
   let unknownDetailPrice = false
   const productRef = '33333333-3333-4333-8333-333333333333', cursor = { platformId: 'hema', ref: '44444444-4444-4444-8444-444444444444' }
-  const status = () => ({ authenticated: linked, state: linked ? 'logged-in' : 'logged-out', loginMethod: 'taobao-qr',
+  const status = () => ({ addingAccount: adding, authenticated: linked, state: linked ? 'logged-in' : 'logged-out', loginMethod: 'taobao-qr',
     viewAccountRef: linked ? ref : null, accounts: linked ? [{ ref, nickname: '示例盒马用户', externalId: profile.id, loginMethod: 'taobao-qr' }] : [],
     taobaoAccounts: [{ ref: source, nickname: '示例淘宝用户' }] })
   const mounted = await mount({ async call(_channel, endpoint, payload) {
     calls.push({ endpoint, payload })
+    if (endpoint === 'accountBegin') { adding = true; return ok(status()) }
     if (endpoint === 'status') return ok(payload.platformId === 'hema' ? status() : { state: 'logged-out', authenticated: false })
     if (endpoint === 'useTaobao') { assert.equal(payload.platformId, 'hema'); assert.equal(payload.sourceAccountRef, source); linked = true; return ok(status()) }
     if (endpoint === 'profile') return ok({ ...profile, nickname: '示例盒马用户' })
@@ -443,6 +444,7 @@ test('Hema view uses explicit Taobao sign-in, private account scope and remote p
     const root = mounted.renderer.root
     const click = label => root.findAllByType('button').find(button => text(button.props.children) === label).props.onClick()
     await act(async () => root.findAll(node => node.type === 'span' && node.props.className === 'waimai-choice')[0].props.onSelect('hema'))
+    await act(async () => click('添加账号'))
     assert(!root.findAllByType('button').some(button => text(button.props.children) === '手机号短信'))
     const loginMethods = ['手机号短信（淘宝授权）', '盒马 App 扫码', '淘宝授权扫码', '使用淘宝账号'].filter(label => root.findAllByType('button').some(button => text(button.props.children) === label))
     assert.equal(loginMethods.length, 4)
@@ -552,7 +554,7 @@ async function mount(rpc, options = {}) {
   }
   module.apply(ctx)
   let renderer
-  await act(async () => { const selected = options.tool ? toolCards.get(options.tool.name) : { component: Card, props: cardProps }; renderer = create(React.createElement(selected.component, { ...selected.props, toolName: options.tool?.name, ...options.tool?.props })) })
+  await act(async () => { const selected = options.shared ? { component: module.ui.PlatformCard, props: { rpc, t: key => dictionary[key], serviceOwned: true, defaultPlatform: 'taobao', maxOrderAmount: 35 } } : options.tool ? toolCards.get(options.tool.name) : { component: Card, props: cardProps }; renderer = create(React.createElement(selected.component, { ...selected.props, toolName: options.tool?.name, ...options.tool?.props })) })
   return { renderer, updateConfig: config => {
     currentSnapshot = { ...currentSnapshot, revision: currentSnapshot.revision + 1, value: Config(config).get() }
     for (const listener of listeners) listener()
@@ -580,28 +582,32 @@ test('remote mode displays the service limit and exposes only connection setting
 test('stale platform metadata shows a retry and never starts a login with missing methods', async () => {
   let ready = false; const calls = []
   const definitions = JSON.parse(await readFile(new URL('../lib/platforms.json', import.meta.url), 'utf8'))
-  const mounted = await mount({ async call(_channel, endpoint) { calls.push(endpoint); return ok({ state: 'logged-out', authenticated: false }) } }, {
+  const mounted = await mount({ async call(_channel, endpoint) { calls.push(endpoint); return ok({ state: 'logged-out', authenticated: false, accounts: [], addingAccount: endpoint === 'accountBegin' }) } }, {
     platforms: async () => ok(ready ? definitions : definitions.map(({ loginMethods: _methods, defaultLoginMethod: _default, ...entry }) => entry)) })
   try {
     assert(mounted.renderer.root.findAllByProps({ role: 'alert' }).some(node => node.type === 'p'))
     assert.equal(calls.length, 0)
     ready = true
     await act(async () => mounted.renderer.root.findAllByType('button').find(button => text(button.props.children) === '重新加载平台').props.onClick())
-    assert(calls.includes('status')); assert(text(mounted.renderer.toJSON()).includes('淘宝扫码'))
+    assert(calls.includes('status')); assert(!calls.includes('qrStart'))
+    await act(async () => mounted.renderer.root.findAllByType('button').find(button => text(button.props.children) === '添加账号').props.onClick())
+    assert(text(mounted.renderer.toJSON()).includes('淘宝扫码')); assert(!calls.includes('qrStart'))
   } finally { mounted.close() }
 })
 
 test('Hema SMS stays in private RPC, defaults to phone authorization and displays the masked pending state', async () => {
-  const calls = []; let pending
+  const calls = []; let pending, adding = false
   const mounted = await mount({ async call(_channel, endpoint, payload) {
     calls.push({ endpoint, payload })
+    if (endpoint === 'accountBegin') adding = true
     if (endpoint === 'sendCode') { assert.equal(payload.loginMethod, 'taobao-sms'); pending = { state: 'code-sent', codePending: true, maskedPhone: '138****0000', retryAfterSeconds: 60, attemptId: '11111111-1111-4111-8111-111111111111' } }
     if (endpoint === 'complete') { assert.equal(payload.loginMethod, 'taobao-sms'); assert.equal(payload.smsAttemptId, pending.attemptId); pending = { ...pending, state: 'registration-required' } }
-    return ok({ authenticated: false, state: 'logged-out', pendingLogin: pending, accounts: [] })
+    return ok({ authenticated: false, state: 'logged-out', pendingLogin: pending, accounts: [], addingAccount: adding })
   } })
   try {
     const root = mounted.renderer.root
     await act(async () => root.findAll(node => node.type === 'span' && node.props.className === 'waimai-choice')[0].props.onSelect('hema'))
+    await act(async () => root.findAllByType('button').find(button => text(button.props.children) === '添加账号').props.onClick())
     const phoneInput = root.findAll(node => node.type === 'span' && node.props.type === 'tel')[0]
     await act(async () => phoneInput.props.onChange({ target: { value: '13800000000' } }))
     await act(async () => root.findAllByType('button').find(button => text(button.props.children) === '获取验证码').props.onClick())
@@ -751,6 +757,8 @@ test('Taobao QR renders in the private plugin page, preserves the current accoun
     const click = label => root.findAllByType('button').find(button => text(button.props.children) === label).props.onClick()
     assert(!root.findAllByType('button').some(button => text(button.props.children) === '获取淘宝登录二维码'))
     await act(async () => click('添加账号'))
+    assert(!calls.some(value => value.endpoint === 'qrStart'))
+    await act(async () => click('获取淘宝登录二维码'))
     const image = root.findAllByType('img').find(value => value.props.alt === '淘宝扫码')
     assert.equal(image.props.src, 'data:image/png;base64,synthetic')
     assert(text(mounted.renderer.toJSON()).includes('正在完成闪购登录'))
@@ -759,10 +767,12 @@ test('Taobao QR renders in the private plugin page, preserves the current accoun
     await act(async () => click('历史订单'))
     assert(!root.findAllByType('img').some(value => value.props.alt === '淘宝扫码'))
     assert(calls.some(value => value.endpoint === 'qrCancel' && value.payload.attemptId === attemptId))
+    await act(async () => click('账号与地址'))
+    assert.equal(calls.filter(value => value.endpoint === 'qrStart').length, 1, 'Returning to accounts must not create a replacement QR')
   } finally { mounted.close() }
 })
 
-test('opening QR sign-in creates the code and automatically completes business verification without a check button', async () => {
+test('explicit QR sign-in creates one code and automatically completes business verification without a check button', async () => {
   const attemptId = '11111111-1111-4111-8111-111111111111', timers = new Map(), calls = []
   let timerId = 0, polls = 0
   const mounted = await mount({ async call(_channel, endpoint) {
@@ -785,6 +795,8 @@ test('opening QR sign-in creates the code and automatically completes business v
   try {
     const root = mounted.renderer.root
     await act(async () => root.findAllByType('button').find(button => text(button.props.children) === '添加账号').props.onClick())
+    assert.equal(calls.filter(value => value === 'qrStart').length, 0)
+    await act(async () => root.findAllByType('button').find(button => text(button.props.children) === '获取淘宝登录二维码').props.onClick())
     assert.equal(calls.filter(value => value === 'qrStart').length, 1)
     assert(!root.findAllByType('button').some(button => text(button.props.children) === '检查闪购授权'))
     await tick()
@@ -1792,4 +1804,80 @@ test('payment choices refresh automatically without clearing the saved choice on
     assert(button('设为默认 · 测试银行（尾号 1234）').props.disabled)
     assert.equal(text(button('刷新付款方式').props.children),'')
   } finally {mounted.close()}
+})
+
+
+test('empty shared account page starts login only after explicit actions and keeps automatic verification', async () => {
+  const calls = [], timers = new Map(), attemptId = '11111111-1111-4111-8111-111111111111'
+  let adding = false, linked = false, timerId = 0
+  const state = () => ({ authenticated: linked, state: linked ? 'logged-in' : 'logged-out', addingAccount: adding,
+    accounts: linked ? [{ ref: attemptId, nickname: 'Test account', loginMethod: 'taobao-qr' }] : [], viewAccountRef: linked ? attemptId : null })
+  const rpc = { async call(_channel, endpoint, payload) {
+    calls.push({ endpoint, payload })
+    if (endpoint === 'status' || endpoint === 'accountsList') return ok(state())
+    if (endpoint === 'accountBegin') { adding = true; return ok(state()) }
+    if (endpoint === 'accountCancel') { adding = false; return ok(state()) }
+    if (endpoint === 'qrStart') return ok({ ...state(), qr: { attemptId, state: 'waiting', image: 'data:image/png;base64,synthetic', expiresAt: Date.now() + 180000, pollAfterMs: 2000 } })
+    if (endpoint === 'qrPoll') { linked = true; adding = false; return ok({ ...state(), qr: { attemptId, state: 'linked' } }) }
+    if (endpoint === 'qrCancel') return ok(state())
+    if (endpoint === 'profile') return ok(profile)
+    throw Error('Unexpected login operation: ' + endpoint)
+  } }
+  const options = { shared: true, setTimeout: fn => { const id = ++timerId; timers.set(id, fn); return id }, clearTimeout: id => timers.delete(id) }
+  let mounted = await mount(rpc, options)
+  const button = label => mounted.renderer.root.findAllByType('button').find(node => text(node.props.children) === label)
+  const newRequests = () => calls.filter(row => ['qrStart', 'sendCode', 'accountBegin'].includes(row.endpoint))
+  try {
+    assert.equal(newRequests().length, 0, 'Opening an empty shared page must not start account or QR/SMS requests')
+    const initial = { emptyAccount: text(mounted.renderer.toJSON()).includes('尚未添加账号'),
+      loginPanels: mounted.renderer.root.findAllByProps({ 'aria-label': '账号登录' }).length,
+      addAccountAvailable: Boolean(button('添加账号')), qrRequests: calls.filter(row => row.endpoint === 'qrStart').length,
+      smsRequests: calls.filter(row => row.endpoint === 'sendCode').length }
+    assert.deepEqual(initial, JSON.parse(await readFile(new URL('./fixtures/empty-account-login.json', import.meta.url), 'utf8')))
+    await act(async () => button('历史订单').props.onClick())
+    await act(async () => button('账号与地址').props.onClick())
+    await act(async () => button('检查登录状态').props.onClick())
+    assert.equal(newRequests().length, 0, 'Navigation and status refresh must not initiate login')
+    mounted.close(); mounted = await mount(rpc, options)
+    assert.equal(newRequests().length, 0, 'Reopening must not initiate login')
+    await act(async () => button('添加账号').props.onClick())
+    assert.equal(calls.filter(row => row.endpoint === 'accountBegin').length, 1)
+    assert.equal(calls.filter(row => row.endpoint === 'qrStart').length, 0, 'Adding an account still requires choosing the QR action')
+    await act(async () => button('获取淘宝登录二维码').props.onClick())
+    assert.equal(calls.filter(row => row.endpoint === 'qrStart').length, 1)
+    const [id, tick] = timers.entries().next().value; timers.delete(id)
+    await act(async () => tick())
+    assert.equal(calls.filter(row => row.endpoint === 'qrPoll').length, 1, 'An explicitly started attempt still verifies automatically')
+    assert.equal(timers.size, 0)
+    assert(!calls.some(row => row.endpoint === 'sendCode'))
+  } finally { mounted.close() }
+})
+
+
+test('pending login status, navigation and failed QR reads never create replacement login requests', async () => {
+  const calls = [], timers = new Map(); let timerId = 0
+  const rpc = { async call(_channel, endpoint) {
+    calls.push(endpoint)
+    if (endpoint === 'qrStart') return { ok: false, error: { code: 'fixture-unavailable', message: '扫码服务暂时不可用' } }
+    return ok({ authenticated: false, state: 'logged-out', addingAccount: true, accounts: [],
+      pendingLogin: { state: 'not-checked', codePending: false } })
+  } }
+  const options = { shared: true, setTimeout: fn => { const id = ++timerId; timers.set(id, fn); return id }, clearTimeout: id => timers.delete(id) }
+  let mounted = await mount(rpc, options)
+  const button = label => mounted.renderer.root.findAllByType('button').find(node => text(node.props.children) === label)
+  try {
+    assert(!calls.some(method => ['accountBegin', 'qrStart', 'sendCode'].includes(method)))
+    await act(async () => button('历史订单').props.onClick())
+    await act(async () => button('账号与地址').props.onClick())
+    mounted.close(); mounted = await mount(rpc, options)
+    assert(!calls.includes('qrStart'), 'A server-side draft does not authorize a new QR on reopen')
+    await act(async () => button('获取淘宝登录二维码').props.onClick())
+    assert.equal(calls.filter(method => method === 'qrStart').length, 1)
+    assert(text(mounted.renderer.toJSON()).includes('扫码服务暂时不可用'))
+    assert.equal(timers.size, 0, 'A failed start does not schedule another start')
+    await act(async () => button('手机号短信').props.onClick())
+    await act(async () => button('检查登录状态').props.onClick())
+    assert.equal(calls.filter(method => method === 'qrStart').length, 1)
+    assert(!calls.includes('sendCode'))
+  } finally { mounted.close() }
 })

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.1 (2026-11-10)
+
+- Require explicit account-add and QR actions before starting sign-in. Empty pages, navigation, status refresh and reopening no longer request QR codes; existing attempts retain automatic verification and cancellation.
+
 ## 0.9.0 — Unreleased
 
 - Add private, account-scoped Alipay QR sign-in before ordering, including preview mode. Verify the protected official return page, keep cookies in memory, and reuse authentication only through the existing order cashier; sign-in never creates orders or pays.
